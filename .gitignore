@@ -1,0 +1,31 @@
+# Build
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+.vs/
+
+# Yayın çıktıları — kaynaktan üretilir
+Release_v2/
+publish/
+*.hex
+
+# Loglar ve runtime durumu — SIR İÇEREBİLİR
+*.log
+*.log.bak
+app.log*
+crash.log
+build.txt
+err.txt
+errors.txt
+errors.log
+publish_out.txt
+publish_final.txt
+
+# Yapılandırma — API anahtarı içerir, ASLA commit edilmez
+config.json
+
+# Ajan/oturum durumu
+.remember/
+.claude/settings.local.json
+.superpowers/
