@@ -223,6 +223,28 @@ namespace KontroXXL_WinApp
         private static readonly Color Accent    = Color.FromArgb(0, 120, 215);
         private static readonly Color AccentGlow = Color.DeepSkyBlue;
 
+        // A1: WinForms'ta Controls.Clear() çocukları DISPOSE ETMEZ. Her yenilemede
+        // Panel/Label/Button ve içlerindeki Font nesneleri sızıyordu -> GDI handle
+        // tükeniyor, saatler içinde OutOfMemoryException geliyordu (Release_v2/crash.log).
+        private static void ClearAndDispose(Control.ControlCollection controls)
+        {
+            for (int i = controls.Count - 1; i >= 0; i--)
+            {
+                Control c = controls[i];
+                controls.RemoveAt(i);
+                c.Dispose();
+            }
+        }
+
+        // A1: satır başına yeni Font yerine paylaşılan, hiç dispose edilmeyen tek örnekler.
+        private static readonly Font FontRowTitle  = new Font("Segoe UI Bold", 9);
+        private static readonly Font FontRowTitleL = new Font("Segoe UI Bold", 10);
+        private static readonly Font FontRowState  = new Font("Segoe UI Bold", 8);
+        private static readonly Font FontRowBody   = new Font("Segoe UI", 9);
+        private static readonly Font FontRowSmall  = new Font("Segoe UI", 8);
+        private static readonly Font FontRowButton = new Font("Segoe UI", 8, FontStyle.Bold);
+        private static readonly Font FontSemibold9 = new Font("Segoe UI Semibold", 9);
+
         public MainForm(AppConfig config) {
             this.config = config;
             InitializeComponent();
@@ -883,10 +905,10 @@ namespace KontroXXL_WinApp
                         string pSig = string.Join("|", pools.Select(x => $"{x["name"]}_{x["used"]}"));
                         if (pSig != lastPoolSig) {
                             lastPoolSig = pSig;
-                            flowNasPools.Controls.Clear();
+                            ClearAndDispose(flowNasPools.Controls);
                             foreach (var j in pools) {
                                 Panel pan = new Panel() { Size = new Size(220, 68), BackColor = BgCard, Margin = new Padding(0, 0, 10, 0) };
-                                pan.Controls.Add(new Label() { Text = j["name"]?.ToString(), Location = new Point(10, 10), Width = 150, AutoSize = false, Font = new Font("Segoe UI Bold", 9), ForeColor = Color.White });
+                                pan.Controls.Add(new Label() { Text = j["name"]?.ToString(), Location = new Point(10, 10), Width = 150, AutoSize = false, Font = FontRowTitle, ForeColor = Color.White });
                                 pan.Controls.Add(new Label() { Text = $"{j["used"]}%", Location = new Point(170, 10), AutoSize = true, ForeColor = Color.Gainsboro });
                                 ProgressBar pb = new ProgressBar() { Location = new Point(10, 38), Size = new Size(200, 12), Value = Math.Min(100, (int)(j["used"] ?? 0)), Style = ProgressBarStyle.Continuous };
                                 pan.Controls.Add(pb);
@@ -900,13 +922,13 @@ namespace KontroXXL_WinApp
                         string aSig = string.Join("|", alerts.Select(x => x["id"]?.ToString() ?? x["text"]?.ToString() ?? ""));
                         if (aSig != lastAlertSig) {
                             lastAlertSig = aSig;
-                            flowNasAlerts.Controls.Clear();
+                            ClearAndDispose(flowNasAlerts.Controls);
                             if (alerts.Count == 0)
-                                flowNasAlerts.Controls.Add(new Label() { Text = "✓ Aktif uyarı yok.", ForeColor = Color.LimeGreen, AutoSize = true, Margin = new Padding(4, 4, 0, 0), Font = new Font("Segoe UI Semibold", 9) });
+                                flowNasAlerts.Controls.Add(new Label() { Text = "✓ Aktif uyarı yok.", ForeColor = Color.LimeGreen, AutoSize = true, Margin = new Padding(4, 4, 0, 0), Font = FontSemibold9 });
                             else foreach (var al in alerts) {
                                 Panel ap = new Panel() { Size = new Size(700, 44), BackColor = Color.FromArgb(40, 20, 25), Margin = new Padding(0, 0, 0, 4) };
                                 string alText = al["formatted"]?.ToString() ?? al["text"]?.ToString() ?? "Alert";
-                                ap.Controls.Add(new Label() { Text = "⚠ " + alText, Location = new Point(10, 12), Width = 680, AutoSize = false, ForeColor = Color.Gainsboro, Font = new Font("Segoe UI", 8) });
+                                ap.Controls.Add(new Label() { Text = "⚠ " + alText, Location = new Point(10, 12), Width = 680, AutoSize = false, ForeColor = Color.Gainsboro, Font = FontRowSmall });
                                 flowNasAlerts.Controls.Add(ap);
                             }
                         }
@@ -917,7 +939,7 @@ namespace KontroXXL_WinApp
                         string sSig = string.Join("|", services.Select(x => $"{x["service"]}_{x["state"]}"));
                         if (sSig != lastSvcSig) {
                             lastSvcSig = sSig;
-                            flowNasServices.Controls.Clear();
+                            ClearAndDispose(flowNasServices.Controls);
                             foreach (var s in services) {
                                 string sName  = s["service"]?.ToString() ?? "Unknown";
                                 string sState = s["state"]?.ToString() ?? "STOPPED";
@@ -925,15 +947,15 @@ namespace KontroXXL_WinApp
                                 Panel sp = new Panel() { Size = new Size(700, 44), BackColor = Color.FromArgb(22, 22, 30), Margin = new Padding(0, 0, 0, 6) };
                                 Panel pInd = new Panel() { Dock = DockStyle.Left, Width = 4, BackColor = isRunning ? Color.LimeGreen : Color.Tomato };
                                 sp.Controls.Add(pInd);
-                                sp.Controls.Add(new Label() { Text = sName.ToUpper(), Location = new Point(16, 12), Width = 230, Font = new Font("Segoe UI Bold", 9), ForeColor = Color.White });
-                                sp.Controls.Add(new Label() { Text = isRunning ? "RUNNING" : "STOPPED", Location = new Point(258, 12), Width = 100, ForeColor = isRunning ? Color.LimeGreen : Color.Tomato, Font = new Font("Segoe UI Bold", 8) });
+                                sp.Controls.Add(new Label() { Text = sName.ToUpper(), Location = new Point(16, 12), Width = 230, Font = FontRowTitle, ForeColor = Color.White });
+                                sp.Controls.Add(new Label() { Text = isRunning ? "RUNNING" : "STOPPED", Location = new Point(258, 12), Width = 100, ForeColor = isRunning ? Color.LimeGreen : Color.Tomato, Font = FontRowState });
                                 Button btnAct = new Button() {
                                     Text = isRunning ? "DURDUR" : "BAŞLAT",
                                     Location = new Point(550, 8), Width = 140, Height = 28,
                                     FlatStyle = FlatStyle.Flat,
                                     BackColor = isRunning ? Color.FromArgb(70, 30, 30) : Color.FromArgb(30, 70, 30),
                                     ForeColor = Color.White,
-                                    Font = new Font("Segoe UI Bold", 8),
+                                    Font = FontRowState,
                                     Cursor = Cursors.Hand
                                 };
                                 btnAct.FlatAppearance.BorderSize = 0;
@@ -950,7 +972,7 @@ namespace KontroXXL_WinApp
                         string sig = string.Join("|", sorted.Select(v => v["name"]?.ToString() ?? ""));
                         if (sig != lastAppSig) {
                             lastAppSig = sig;
-                            flowRealApps.Controls.Clear();
+                            ClearAndDispose(flowRealApps.Controls);
                             foreach (var v in sorted) flowRealApps.Controls.Add(CreateAppCtrl(v));
                         } else {
                             for (int i = 0; i < sorted.Count && i < flowRealApps.Controls.Count; i++)
@@ -983,8 +1005,8 @@ namespace KontroXXL_WinApp
             bool running = st == "RUNNING" || st == "ACTIVE";
             Panel pInd = new Panel() { Dock = DockStyle.Left, Width = 4, BackColor = running ? Color.LimeGreen : Color.FromArgb(80, 80, 80) };
             p.Controls.Add(pInd);
-            p.Controls.Add(new Label() { Text = n, Location = new Point(16, 16), Width = 290, Font = new Font("Segoe UI Bold", 10), AutoEllipsis = true, ForeColor = Color.White });
-            Label ls = new Label() { Text = st, Location = new Point(315, 16), Width = 110, ForeColor = running ? Color.LimeGreen : Color.Salmon, Tag = "state", Font = new Font("Segoe UI", 9) };
+            p.Controls.Add(new Label() { Text = n, Location = new Point(16, 16), Width = 290, Font = FontRowTitleL, AutoEllipsis = true, ForeColor = Color.White });
+            Label ls = new Label() { Text = st, Location = new Point(315, 16), Width = 110, ForeColor = running ? Color.LimeGreen : Color.Salmon, Tag = "state", Font = FontRowBody };
             p.Controls.Add(ls);
             Btn(438, Color.FromArgb(30, 70, 30),  "▶ START",  () => OnAppAction?.Invoke(n, "START"),   p);
             Btn(530, Color.FromArgb(70, 30, 30),  "■ STOP",   () => OnAppAction?.Invoke(n, "STOP"),    p);
@@ -996,7 +1018,7 @@ namespace KontroXXL_WinApp
             Button b = new Button() {
                 Text = t, Location = new Point(x, 11), Width = 86, Height = 30,
                 FlatStyle = FlatStyle.Flat, BackColor = c, Cursor = Cursors.Hand,
-                Font = new Font("Segoe UI", 8, FontStyle.Bold), ForeColor = Color.White
+                Font = FontRowButton, ForeColor = Color.White
             };
             b.FlatAppearance.BorderSize = 0;
             b.Click += (s, e) => a();
