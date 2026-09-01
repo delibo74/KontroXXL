@@ -40,29 +40,50 @@ namespace KontroXXL_WinApp
         public int LastPcTemp { get; set; } = 0;
 
         public JArray LastPools { get; set; } = new JArray();
-        
+
+        // Faz 1 (A8): tek 500ms timer yerine ayrı periyotlar
+        public int LcdIntervalMs { get; set; } = 200;
+        public int PcIntervalMs { get; set; } = 1000;
+        public int NasIntervalMs { get; set; } = 5000;
+        public int ConfigFlushIntervalMs { get; set; } = 30000;
+
         public List<ShortcutItem> Shortcuts { get; set; } = new List<ShortcutItem>();
 
         // F20: Silently ignore stale/unknown fields from config.json (e.g. Truenas2Ip, LastNasServices)
         [JsonExtensionData]
         public IDictionary<string, JToken> _extra { get; set; }
 
-        public static AppConfig Load()
+        // A8/A4: telemetri her saniye diske yazılmaz; kirli işaretlenir, flush timer'ı indirir.
+        [JsonIgnore] private bool _dirty;
+        [JsonIgnore] public string SourcePath { get; private set; } =
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
+
+        public void MarkDirty() => _dirty = true;
+
+        public static AppConfig Load(string path = null)
         {
-            string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
-            if (File.Exists(path))
+            path ??= Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
+            string raw = KontroXXL.Core.Configuration.JsonFileStore.ReadOrNull(path);
+            AppConfig cfg = null;
+            if (raw != null)
             {
-                try {
-                    return JsonConvert.DeserializeObject<AppConfig>(File.ReadAllText(path)) ?? new AppConfig();
-                } catch { }
+                try { cfg = JsonConvert.DeserializeObject<AppConfig>(raw); } catch { }
             }
-            return new AppConfig();
+            cfg ??= new AppConfig();
+            cfg.SourcePath = path;
+            return cfg;
         }
 
         public void Save()
         {
-            string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
-            File.WriteAllText(path, JsonConvert.SerializeObject(this, Formatting.Indented));
+            KontroXXL.Core.Configuration.JsonFileStore.WriteAtomic(
+                SourcePath, JsonConvert.SerializeObject(this, Formatting.Indented));
+            _dirty = false;
+        }
+
+        public void FlushIfDirty()
+        {
+            if (_dirty) Save();
         }
     }
 
