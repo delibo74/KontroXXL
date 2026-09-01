@@ -50,7 +50,11 @@ public sealed class RollingFileLogger : ILog, IDisposable
         string line = $"[{DateTime.Now:HH:mm:ss}] [{tag}] {msg}";
         lock (_gate)
         {
-            if (_writer is null) return;
+            if (_writer is null)
+            {
+                try { Open(); } catch { return; }   // hâlâ açılamıyorsa bu satırı düşür
+                if (_writer is null) return;
+            }
             try
             {
                 _writer.WriteLine(line);
@@ -95,10 +99,12 @@ public sealed class RollingFileLogger : ILog, IDisposable
         catch
         {
             // Döndürme başarısızsa loglamaya devam et; dosya büyür ama uygulama yaşar.
+            // _size'ı SIFIRLAMA — Open() diskteki gerçek boyutu okuyacak ve
+            // bir sonraki yazımda yeniden döndürme denenecek.
         }
 
-        Open();
-        _size = 0;
+        try { Open(); }
+        catch { _writer = null; }   // bir sonraki Write() yeniden dener
     }
 
     public void Dispose()

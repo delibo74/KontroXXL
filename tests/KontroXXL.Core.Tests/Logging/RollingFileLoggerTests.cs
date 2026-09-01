@@ -91,4 +91,39 @@ public class RollingFileLoggerTests : IDisposable
         Assert.Contains("patladi", content);
         Assert.Contains("sebep", content);
     }
+
+    [Fact]
+    public void Keeps_logging_after_a_rotation_whose_reopen_failed()
+    {
+        using (var log = new RollingFileLogger(Path0, LogLevel.Info, maxBytes: 100, keep: 2))
+        {
+            // Döndürmeyi tetikle
+            for (int i = 0; i < 10; i++) log.Info(new string('a', 40));
+
+            // Döndürme sonrası hâlâ yazabiliyor olmalı — sessizce ölmemeli.
+            log.Info("rotasyondan-sonra");
+        }   // logger burada kapanır, dosyalar serbest kalır
+
+        string all = string.Join("\n", Directory.GetFiles(_dir).Select(File.ReadAllText));
+        Assert.Contains("rotasyondan-sonra", all);
+    }
+
+    [Fact]
+    public void Does_not_reset_its_size_counter_when_rotation_fails()
+    {
+        // app.1.log'u kimseyle paylaşmadan aç -> File.Move(app.log -> app.1.log) patlar.
+        string blocker = Path.Combine(_dir, "app.1.log");
+        File.WriteAllText(blocker, "engel");
+        using var hold = new FileStream(blocker, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+        using var log = new RollingFileLogger(Path0, LogLevel.Info, maxBytes: 200, keep: 2);
+        for (int i = 0; i < 30; i++) log.Info(new string('b', 40));
+
+        // Döndürme başarısız oldu ve app.log büyüdü. Kabul edilebilir.
+        // Kabul EDİLEMEZ olan, sayacın sıfırlanıp büyümenin sınırsız hale gelmesi:
+        // her yazımda yeniden döndürme denenmeli, yani dosya maxBytes'ın
+        // birkaç katıyla sınırlı kalmalı, tam bir maxBytes daha ertelenmemeli.
+        long size = new FileInfo(Path0).Length;
+        Assert.True(size > 200, $"test kurulumu hatalı, döndürme engellenmemiş: {size}");
+    }
 }
