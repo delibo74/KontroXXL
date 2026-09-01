@@ -58,6 +58,11 @@ namespace KontroXXL_WinApp
         [JsonIgnore] public string SourcePath { get; private set; } =
             Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
 
+        // Task 10 arka plan thread'inden Last* alanlarini yazacak, UI timer'i ise
+        // FlushIfDirty() cagiracak. Serilestirme tum nesne grafigini gezdigi icin
+        // (JArray uyeleri dahil) yazim ve serilestirme ayni kilidi paylasmak zorunda.
+        [JsonIgnore] public object SyncRoot { get; } = new object();
+
         public void MarkDirty() => _dirty = true;
 
         public static AppConfig Load(string path = null)
@@ -76,9 +81,13 @@ namespace KontroXXL_WinApp
 
         public void Save()
         {
-            KontroXXL.Core.Configuration.JsonFileStore.WriteAtomic(
-                SourcePath, JsonConvert.SerializeObject(this, Formatting.Indented));
-            _dirty = false;
+            string json;
+            lock (SyncRoot)
+            {
+                json = JsonConvert.SerializeObject(this, Formatting.Indented);
+                _dirty = false;
+            }
+            KontroXXL.Core.Configuration.JsonFileStore.WriteAtomic(SourcePath, json);
         }
 
         public void FlushIfDirty()
