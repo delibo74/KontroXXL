@@ -32,4 +32,8 @@
     </None>
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\KontroXXL.Core\KontroXXL.Core.csproj" />
+  </ItemGroup>
+
 </Project>

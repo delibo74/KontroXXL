@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>12.0</LangVersion>
+    <Version>2.1.0</Version>
+    <Company>KontroXXL</Company>
+    <Product>KontroXXL</Product>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+</Project>
