@@ -17,6 +17,7 @@ using System.Diagnostics;
 using System.Net.NetworkInformation;
 using System.IO;
 using KontroXXL.Core.Logging;
+using KontroXXL.Core.Lcd;
 
 namespace KontroXXL_WinApp
 {
@@ -31,12 +32,10 @@ namespace KontroXXL_WinApp
         private System.Windows.Forms.Timer updateTimer;
         private PerformanceCounter cpuActualFreqCounter;
         
-        private enum LcdMode { Home, Menu, Apps, Pools, Shortcuts, NasPower }
-        private LcdMode currentLcdMode = LcdMode.Home;
-        private int lcdIndex = 0;
-        private int lcdPage = 0; // 0:CPU, 1:GPU, 2:NAS, 3:ALERTS
-        private int scrollIdx = 0;
-        private DateTime lastScrollUpdate = DateTime.Now;
+        // LCD durumu tek bir referansta toplandı; yalnızca UI thread'inden değiştirilir (A7).
+        private LcdMenuState lcdState = LcdMenuState.Initial;
+        private int scrollOffset = 0;
+        private DateTime lastScrollTick = DateTime.Now;
 
         private JArray poolsList = new JArray();
         private JArray appsList = new JArray();
@@ -159,13 +158,7 @@ namespace KontroXXL_WinApp
         private void WireFormEvents(MainForm form)
         {
             form.OnAppAction += (name, action) => Task.Run(() => AppAction(name, action));
-            form.OnNasPower += (action) => Task.Run(async () => {
-                try {
-                    string endpoint = action == "REBOOT" ? "system/reboot" : "system/shutdown";
-                    Log($"NAS {action} komutu arayuzden tetiklendi.");
-                    await httpClient.PostAsync($"https://{config.TruenasIp}/api/v2.0/{endpoint}", null);
-                } catch (Exception ex) { Log($"NAS {action} hatasi: {ex.Message}"); }
-            });
+            form.OnNasPower += (action) => _ = NasPower(action);
             form.OnNasDismissAlerts += () => Task.Run(async () => {
                 try {
                     Log("NAS Alertlar temizleniyor...");
@@ -308,188 +301,158 @@ namespace KontroXXL_WinApp
 
         private void HandleArduinoEvent(string ev)
         {
+            LcdInput input;
             switch (ev)
             {
-                case "UP":
-                    if (currentLcdMode == LcdMode.Home) { 
-                        try {
-                            var dev = audioController.DefaultPlaybackDevice;
-                            if (dev != null) { dev.Volume += 2; volumeShowUntil = DateTime.Now.AddSeconds(2); }
-                        } catch { }
-                    }
-                    else { lcdIndex++; FixIndex(); }
-                    break;
-                case "DN":
-                    if (currentLcdMode == LcdMode.Home) { 
-                        try {
-                            var dev = audioController.DefaultPlaybackDevice;
-                            if (dev != null) { dev.Volume -= 2; volumeShowUntil = DateTime.Now.AddSeconds(2); }
-                        } catch { }
-                    }
-                    else { lcdIndex--; FixIndex(); }
-                    break;
-                case "CLICK":
-                    if (currentLcdMode == LcdMode.Home) { currentLcdMode = LcdMode.Menu; lcdIndex = 0; }
-                    else if (currentLcdMode == LcdMode.Menu) {
-                        if (lcdIndex == 0)      { currentLcdMode = LcdMode.Apps; lcdIndex = 0; _ = PushArduinoData(); }
-                        else if (lcdIndex == 1) { currentLcdMode = LcdMode.Pools; lcdIndex = 0; _ = PushArduinoData(); }
-                        else if (lcdIndex == 2) { currentLcdMode = LcdMode.Shortcuts; lcdIndex = 0; }
-                        else if (lcdIndex == 3) { currentLcdMode = LcdMode.NasPower; lcdIndex = 0; }
-                    }
-                    else if (currentLcdMode == LcdMode.Apps) { ToggleApp(lcdIndex); }
-                    else if (currentLcdMode == LcdMode.Shortcuts) { RunShortcut(lcdIndex); }
-                    else if (currentLcdMode == LcdMode.NasPower) { HandleNasPower(lcdIndex); }
-                    break;
-                case "BACK":
-                    if (currentLcdMode == LcdMode.Home) {
-                        lcdPage = (lcdPage + 1) % 4; // 0:CPU, 1:GPU, 2:NAS, 3:ALERTS
-                        SendData("CLR"); // Clear stale chars between page transitions
-                        lastL0 = ""; lastL1 = ""; // Force full redraw after CLR
-                    } else {
-                        currentLcdMode = LcdMode.Home; lcdIndex = 0;
-                        SendData("CLR");
-                        lastL0 = ""; lastL1 = "";
-                    }
-                    break;
+                case "UP":    input = LcdInput.Up; break;
+                case "DN":    input = LcdInput.Down; break;
+                case "CLICK": input = LcdInput.Click; break;
+                case "BACK":  input = LcdInput.Back; break;
+                default: return;
             }
-            UpdateLCD(true);
+
+            // Seri thread'inden geliyoruz; durum değişimini UI thread'ine sıraya al (A7).
+            if (mainForm != null && mainForm.IsHandleCreated && !mainForm.IsDisposed)
+                mainForm.BeginInvoke((MethodInvoker)(() => ApplyInput(input)));
+            else
+                ApplyInput(input);
         }
 
-        private void FixIndex()
+        private void ApplyInput(LcdInput input)
         {
-            int max = 0;
-            switch (currentLcdMode) {
-                case LcdMode.Menu: max = 4; break;
-                case LcdMode.Apps: max = appsList.Count; break;
-                case LcdMode.Pools: max = poolsList.Count; break;
-                case LcdMode.Shortcuts: max = config.Shortcuts.Count; break;
-                case LcdMode.NasPower: max = 3; break;
+            var data = BuildViewData();
+            var previous = lcdState;
+            var transition = LcdMenuModel.Apply(previous, input, data.Counts);
+            lcdState = transition.State;
+
+            // Mod veya sayfa değiştiyse ekranı temizle ve tam yeniden çizime zorla.
+            if (lcdState.Mode != previous.Mode || lcdState.Page != previous.Page)
+            {
+                SendData("CLR");
+                lastL0 = ""; lastL1 = "";
+                scrollOffset = 0;
             }
-            if (max == 0) { lcdIndex = 0; return; }
-            if (lcdIndex < 0) lcdIndex = max - 1;
-            if (lcdIndex >= max) lcdIndex = 0;
-            scrollIdx = 0;
+
+            RunEffect(transition.Effect, transition.EffectIndex);
+            UpdateLCD(forced: true);
+        }
+
+        private void RunEffect(LcdEffect effect, int index)
+        {
+            switch (effect)
+            {
+                case LcdEffect.VolumeUp:   NudgeVolume(+2); break;
+                case LcdEffect.VolumeDown: NudgeVolume(-2); break;
+                case LcdEffect.RequestSync: _ = PushArduinoData(); break;
+                case LcdEffect.ToggleApp:  ToggleApp(index); break;
+                case LcdEffect.RunShortcut: RunShortcut(index); break;
+                case LcdEffect.NasReboot:   _ = NasPower("REBOOT"); break;
+                case LcdEffect.NasShutdown: _ = NasPower("SHUTDOWN"); break;
+            }
+        }
+
+        private void NudgeVolume(int delta)
+        {
+            try
+            {
+                var dev = audioController?.DefaultPlaybackDevice;
+                if (dev == null) return;
+                dev.Volume = Math.Max(0, Math.Min(100, dev.Volume + delta));
+                volumeShowUntil = DateTime.Now.AddSeconds(2);
+            }
+            catch (Exception ex) { log.Debug("Ses ayarlanamadi: " + ex.Message); }
+        }
+
+        private async Task NasPower(string action)
+        {
+            try
+            {
+                string endpoint = action == "REBOOT" ? "system/reboot" : "system/shutdown";
+                log.Info($"NAS {action} komutu tetiklendi.");
+                await httpClient.PostAsync($"https://{config.TruenasIp}/api/v2.0/{endpoint}", null);
+            }
+            catch (Exception ex) { log.Error($"NAS {action} hatasi", ex); }
+        }
+
+        /// <summary>Formatter ve durum makinesi için dünyanın anlık görüntüsü.</summary>
+        private LcdViewData BuildViewData()
+        {
+            var apps = appsList;   // yerel kopya — arada değişse bile tutarlı okuruz
+            var pools = poolsList;
+
+            var appNames = new List<string>(apps.Count);
+            var appRunning = new List<bool>(apps.Count);
+            foreach (var a in apps)
+            {
+                appNames.Add(a["name"]?.ToString() ?? "");
+                string st = a["state"]?.ToString();
+                appRunning.Add(st == "RUNNING" || st == "ACTIVE");
+            }
+
+            var poolNames = new List<string>(pools.Count);
+            var poolUsed = new List<int>(pools.Count);
+            foreach (var p in pools)
+            {
+                poolNames.Add(p["name"]?.ToString() ?? "");
+                poolUsed.Add((int)(p["used"] ?? 0));
+            }
+
+            var shortcutNames = new List<string>(config.Shortcuts.Count);
+            foreach (var s in config.Shortcuts) shortcutNames.Add(s.Name ?? "");
+
+            return new LcdViewData(
+                config.LastCpu, config.LastCpuFreq, config.LastRam,
+                config.LastGpu, config.LastGpuTemp, config.LastGpuFan, config.LastNetSpeed,
+                config.LastNasCpu, config.LastNasTemp, config.LastNasRx, config.LastNasTx,
+                config.LastNasAlerts, nasLastConn,
+                appNames, appRunning, poolNames, poolUsed, shortcutNames);
         }
 
         private void UpdateLCD(bool forced = false)
         {
             if (serialPort == null || !serialPort.IsOpen) return;
-            
-            // Throttle rapid updates to prevent LCD bugging (min 40ms between forced sends)
+
             var now = DateTime.Now;
             if (forced && (now - lastLcdUpdate).TotalMilliseconds < 30) return;
             if (!forced && (now - lastLcdUpdate).TotalMilliseconds < 100) return;
             lastLcdUpdate = now;
 
+            // Kaydırma sayaçları burada ilerler — formatter saf kalır.
+            if ((now - lastScrollTick).TotalMilliseconds > 400) { scrollOffset++; lastScrollTick = now; }
+            if (now >= _lcdTickerUntil) _lcdTickerText = "";
+            else if ((now - _lastTickerScroll).TotalMilliseconds > 300) { _tickerScrollIdx++; _lastTickerScroll = now; }
+
             try
             {
-                string l0 = "", l1 = "";
-                bool isBar = false; int barVal = 0;
+                var ctx = new LcdRenderContext(
+                    Now: now,
+                    ScrollOffset: scrollOffset,
+                    VolumeActive: now < volumeShowUntil,
+                    VolumePercent: CurrentVolume(),
+                    TickerText: string.IsNullOrEmpty(_lcdTickerText) ? null : _lcdTickerText,
+                    TickerOffset: _tickerScrollIdx);
 
-                switch (currentLcdMode)
+                var frame = LcdFormatter.Render(lcdState, BuildViewData(), ctx);
+
+                if (forced || frame.Line0 != lastL0) { SendData("L0=" + frame.Line0); lastL0 = frame.Line0; }
+
+                if (frame.BarValue.HasValue)
                 {
-                    case LcdMode.Home:
-                        if (DateTime.Now < volumeShowUntil) {
-                            try {
-                                var dev = audioController.DefaultPlaybackDevice;
-                                if (dev != null) {
-                                    l0 = " SYSTEM VOLUME  ";
-                                    isBar = true; barVal = (int)dev.Volume;
-                                }
-                            } catch { l0 = " VOLUME ERROR   "; l1 = " Check Audio!   "; }
-                        } else if (lcdPage == 0) {
-                            string cpuLeft   = string.Format("CPU:{0}%", config.LastCpu);
-                            string freqRight = string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0:0.00}G", config.LastCpuFreq);
-                            l0 = (cpuLeft + freqRight.PadLeft(16 - cpuLeft.Length)).PadRight(16).Substring(0, 16);
-
-                            string ramLeft   = string.Format("RAM:{0}%", config.LastRam);
-                            string clockRight = DateTime.Now.ToString("HH:mm");
-                            l1 = (ramLeft + clockRight.PadLeft(16 - ramLeft.Length)).PadRight(16).Substring(0, 16);
-                        } else if (lcdPage == 1) {
-                            l0 = string.Format("GPU:{0}% {1}C", config.LastGpu, config.LastGpuTemp).PadRight(16).Substring(0, 16);
-                            l1 = string.Format("Fan:{0}% {1}Mbps", config.LastGpuFan, (int)config.LastNetSpeed).PadRight(16).Substring(0, 16);
-                        } else if (lcdPage == 2) {
-                            if (!nasLastConn) { l0 = "  NAS: OFFLINE  "; l1 = " No Connection  "; }
-                            else {
-                                l0 = string.Format("NAS:{0}% {1}C", config.LastNasCpu, config.LastNasTemp).PadRight(16).Substring(0, 16);
-                                l1 = string.Format("\x01{0,3}Mb \x02{1,3}Mb   ", (int)config.LastNasRx, (int)config.LastNasTx);
-                            }
-                        } else {
-                            l0 = "> NAS DASHBOARD ";
-                            l1 = config.LastNasAlerts == 0 ? "No active alerts" : $"{config.LastNasAlerts} SYSTEM ALERTS!";
-                        }
-
-                        // Alert ticker override: show scrolling notification on l0 (not when on alert page)
-                        if (DateTime.Now < _lcdTickerUntil && lcdPage != 3 && !string.IsNullOrEmpty(_lcdTickerText)) {
-                            l0 = GetTicker();
-                        }
-                        break;
-                    case LcdMode.Menu:
-                        l0 = "> SYSTEM MENU   ";
-                        if (lcdIndex == 0)      l1 = "1. NAS APPS     ";
-                        else if (lcdIndex == 1) l1 = "2. NAS POOLS    ";
-                        else if (lcdIndex == 2) l1 = "3. SHORTCUTS    ";
-                        else                    l1 = "4. NAS POWER    ";
-                        break;
-                    case LcdMode.Apps:
-                        if (appsList.Count == 0) { l0 = " APPLICATIONS   "; l1 = " Syncing...      "; }
-                        else {
-                            l0 = GetScrolled(appsList[lcdIndex]["name"]?.ToString() ?? "");
-                            string st = appsList[lcdIndex]["state"]?.ToString();
-                            l1 = (st == "RUNNING" || st == "ACTIVE") ? ">> RUNNING <<   " : ">> STOPPED <<   ";
-                        }
-                        break;
-                    case LcdMode.Pools:
-                        if (poolsList.Count == 0) { l0 = " STORAGE POOLS  "; l1 = " Syncing...      "; }
-                        else {
-                            l0 = GetScrolled(poolsList[lcdIndex]["name"]?.ToString() ?? "");
-                            isBar = true; barVal = (int)poolsList[lcdIndex]["used"];
-                        }
-                        break;
-                    case LcdMode.Shortcuts:
-                        if (config.Shortcuts.Count == 0) { l0 = "ACTIONS:        "; l1 = " No Shortcuts   "; }
-                        else { l0 = "ACTIONS:        "; l1 = GetScrolled(config.Shortcuts[lcdIndex].Name); }
-                        break;
-                    case LcdMode.NasPower:
-                        l0 = "> NAS POWER     ";
-                        if (lcdIndex == 0)      l1 = "1. NAS REBOOT   ";
-                        else if (lcdIndex == 1) l1 = "2. NAS SHUTDOWN ";
-                        else                    l1 = "3. CANCEL       ";
-                        break;
+                    string key = "BAR_" + frame.BarValue.Value;
+                    if (forced || key != lastL1) { SendData("B1=" + frame.BarValue.Value); lastL1 = key; }
                 }
-
-                if (!string.IsNullOrEmpty(l0) && (forced || l0 != lastL0)) { SendData("L0=" + l0); lastL0 = l0; }
-                if (isBar || (!string.IsNullOrEmpty(l1) && (forced || l1 != lastL1))) {
-                    if (isBar) { SendData("B1=" + barVal); lastL1 = "BAR_" + barVal; }
-                    else { SendData("L1=" + l1); lastL1 = l1; }
+                else if (forced || frame.Line1 != lastL1)
+                {
+                    SendData("L1=" + frame.Line1); lastL1 = frame.Line1;
                 }
-            } catch { }
+            }
+            catch (Exception ex) { log.Error("UpdateLCD hatasi", ex); }
         }
 
-        private string GetScrolled(string text)
+        private int CurrentVolume()
         {
-            if (string.IsNullOrEmpty(text)) return "";
-            if (text.Length <= 16) return text.PadRight(16);
-            if (DateTime.Now.Subtract(lastScrollUpdate).TotalMilliseconds > 400) {
-                scrollIdx++;
-                if (scrollIdx > text.Length + 2) scrollIdx = 0;
-                lastScrollUpdate = DateTime.Now;
-            }
-            string extended = text + "  " + text;
-            try { return extended.Substring(scrollIdx, 16); } catch { scrollIdx = 0; return text.PadRight(16); }
-        }
-
-        private string GetTicker()
-        {
-            string text = _lcdTickerText;
-            if (string.IsNullOrEmpty(text)) return "";
-            if (DateTime.Now.Subtract(_lastTickerScroll).TotalMilliseconds > 300) {
-                _tickerScrollIdx++;
-                if (_tickerScrollIdx > text.Length + 2) _tickerScrollIdx = 0;
-                _lastTickerScroll = DateTime.Now;
-            }
-            string extended = text + "  " + text;
-            try { return extended.Substring(_tickerScrollIdx, 16); } catch { _tickerScrollIdx = 0; return text.PadRight(16).Substring(0, 16); }
+            try { return (int)(audioController?.DefaultPlaybackDevice?.Volume ?? 0); }
+            catch { return 0; }
         }
 
         private void SendData(string msg)
@@ -520,28 +483,12 @@ namespace KontroXXL_WinApp
 
         private void RunShortcut(int idx)
         {
-            if (idx >= 0 && idx < config.Shortcuts.Count)
-            {
-                try { Process.Start(new ProcessStartInfo(config.Shortcuts[idx].Path) { UseShellExecute = true, Arguments = config.Shortcuts[idx].Arguments }); }
-                catch { }
-                currentLcdMode = LcdMode.Home;
+            if (idx < 0 || idx >= config.Shortcuts.Count) return;
+            try {
+                Process.Start(new ProcessStartInfo(config.Shortcuts[idx].Path) {
+                    UseShellExecute = true, Arguments = config.Shortcuts[idx].Arguments });
             }
-        }
-
-        private void HandleNasPower(int idx)
-        {
-            if (idx == 0 || idx == 1)
-            {
-                string action = (idx == 0) ? "REBOOT" : "SHUTDOWN";
-                Task.Run(async () => {
-                    try {
-                        string endpoint = (action == "REBOOT") ? "system/reboot" : "system/shutdown";
-                        Log($"NAS {action} komutu Arduino'dan tetiklendi.");
-                        await httpClient.PostAsync($"https://{config.TruenasIp}/api/v2.0/{endpoint}", null);
-                    } catch (Exception ex) { Log($"NAS {action} hatasi: {ex.Message}"); }
-                });
-            }
-            currentLcdMode = LcdMode.Home;
+            catch (Exception ex) { log.Error("Kisayol calistirilamadi: " + config.Shortcuts[idx].Name, ex); }
         }
 
         private async Task<(int nc, double nrx, double ntx, double nl, int nt, int na, string up, string mem, JArray svcs, bool conn, JArray pools, JArray alerts)> GetTruenasData() {
