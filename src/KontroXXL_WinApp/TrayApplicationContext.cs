@@ -236,7 +236,7 @@ namespace KontroXXL_WinApp
                         log.Debug("Arduino'dan gelen: " + line);
 
                         if (line.StartsWith("EV:")) HandleArduinoEvent(line.Substring(3));
-                        else if (line == "CMD:READY" || line == "CMD:UPDATE") { UpdateLCD(true); Task.Run(() => PushArduinoData()); }
+                        else if (line == "CMD:READY" || line == "CMD:UPDATE") { RunOnUi(() => UpdateLCD(true)); Task.Run(() => PushArduinoData()); }
                         else if (line == "CMD:APPS" || line == "CMD:POOLS" || line == "CMD:SHORTCUTS") { Task.Run(() => PushArduinoData()); }
                     } catch (Exception ex) { Log("Seri veri isleme hatasi: " + ex.Message); }
                 };
@@ -320,21 +320,41 @@ namespace KontroXXL_WinApp
 
         private void ApplyInput(LcdInput input)
         {
-            var data = BuildViewData();
-            var previous = lcdState;
-            var transition = LcdMenuModel.Apply(previous, input, data.Counts);
-            lcdState = transition.State;
-
-            // Mod veya sayfa değiştiyse ekranı temizle ve tam yeniden çizime zorla.
-            if (lcdState.Mode != previous.Mode || lcdState.Page != previous.Page)
+            try
             {
-                SendData("CLR");
-                lastL0 = ""; lastL1 = "";
-                scrollOffset = 0;
-            }
+                var data = BuildViewData();
+                var previous = lcdState;
+                var transition = LcdMenuModel.Apply(previous, input, data.Counts);
+                lcdState = transition.State;
 
-            RunEffect(transition.Effect, transition.EffectIndex);
-            UpdateLCD(forced: true);
+                // Mod veya sayfa değiştiyse ekranı temizle ve tam yeniden çizime zorla.
+                if (lcdState.Mode != previous.Mode || lcdState.Page != previous.Page)
+                {
+                    SendData("CLR");
+                    lastL0 = ""; lastL1 = "";
+                    scrollOffset = 0;
+                }
+
+                RunEffect(transition.Effect, transition.EffectIndex);
+                UpdateLCD(forced: true);
+            }
+            catch (Exception ex) { log.Error("ApplyInput hatasi", ex); }
+        }
+
+        /// <summary>
+        /// LCD durumuna dokunan her sey UI thread'inde calismali (A7).
+        /// Form yoksa (kapanis siralari) cagiran thread'de calistirilir — o noktada
+        /// yarisacak bir timer da kalmamistir.
+        /// </summary>
+        private void RunOnUi(Action action)
+        {
+            var f = mainForm;
+            if (f != null && f.IsHandleCreated && !f.IsDisposed)
+            {
+                try { f.BeginInvoke(action); return; }
+                catch (Exception ex) { log.Debug("UI marshal basarisiz: " + ex.Message); }
+            }
+            action();
         }
 
         private void RunEffect(LcdEffect effect, int index)
@@ -564,11 +584,15 @@ namespace KontroXXL_WinApp
                 if (!mainForm.IsDisposed) mainForm.UpdateNasStats(nc, nrx, ntx, nl, nt, poolArr, appsList, alertsArr, uptime, memory, svcsArr);
 
                 // Alert ticker: trigger LCD scrolling notification when new alerts arrive
-                if (na > _prevNasAlertCount && na > 0) {
-                    _lcdTickerText = $"! YENI ALARM: {na} uyari aktif !  ";
-                    _lcdTickerUntil = DateTime.Now.AddSeconds(10);
-                    _tickerScrollIdx = 0;
-                    Log($"LCD ticker tetiklendi: {na} yeni uyari.");
+                if (na > _prevNasAlertCount && na > 0)
+                {
+                    int count = na;
+                    RunOnUi(() => {
+                        _lcdTickerText = $"! YENI ALARM: {count} uyari aktif !  ";
+                        _lcdTickerUntil = DateTime.Now.AddSeconds(10);
+                        _tickerScrollIdx = 0;
+                    });
+                    log.Info($"LCD ticker tetiklendi: {count} yeni uyari.");
                 }
                 _prevNasAlertCount = na;
 
@@ -603,13 +627,14 @@ namespace KontroXXL_WinApp
                 appsList = new JArray(apps.OrderBy(x => x["name"]?.ToString()));
 
                 var pools = JArray.Parse(await httpClient.GetStringAsync($"https://{config.TruenasIp}/api/v2.0/pool"));
-                poolsList = new JArray();
+                var newPools = new JArray();
                 foreach (var p in pools) {
                     long sz = (long)(p["size"] ?? 0L), usd = (long)(p["allocated"] ?? 0L);
-                    poolsList.Add(new JObject { ["name"] = p["name"], ["used"] = sz > 0 ? (int)(usd * 100 / sz) : 0 });
+                    newPools.Add(new JObject { ["name"] = p["name"], ["used"] = sz > 0 ? (int)(usd * 100 / sz) : 0 });
                 }
+                poolsList = newPools;   // tek atomik yayin — okuyucular yarim liste gormez
 
-                UpdateLCD(true);
+                RunOnUi(() => UpdateLCD(true));
             } catch { }
             finally { 
                 isSyncing = false; 
