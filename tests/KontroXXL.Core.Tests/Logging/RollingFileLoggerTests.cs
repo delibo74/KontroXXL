@@ -109,21 +109,28 @@ public class RollingFileLoggerTests : IDisposable
     }
 
     [Fact]
-    public void Does_not_reset_its_size_counter_when_rotation_fails()
+    public void Retries_rotation_immediately_after_a_failed_one_instead_of_deferring()
     {
-        // app.1.log'u kimseyle paylaşmadan aç -> File.Move(app.log -> app.1.log) patlar.
+        // app.1.log'u paylaşımsız aç -> Rotate() içindeki File.Move ona çarpıp patlar.
         string blocker = Path.Combine(_dir, "app.1.log");
         File.WriteAllText(blocker, "engel");
-        using var hold = new FileStream(blocker, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        var hold = new FileStream(blocker, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
 
         using var log = new RollingFileLogger(Path0, LogLevel.Info, maxBytes: 200, keep: 2);
-        for (int i = 0; i < 30; i++) log.Info(new string('b', 40));
 
-        // Döndürme başarısız oldu ve app.log büyüdü. Kabul edilebilir.
-        // Kabul EDİLEMEZ olan, sayacın sıfırlanıp büyümenin sınırsız hale gelmesi:
-        // her yazımda yeniden döndürme denenmeli, yani dosya maxBytes'ın
-        // birkaç katıyla sınırlı kalmalı, tam bir maxBytes daha ertelenmemeli.
-        long size = new FileInfo(Path0).Length;
-        Assert.True(size > 200, $"test kurulumu hatalı, döndürme engellenmemiş: {size}");
+        // Rotasyon defalarca denenir ve her seferinde başarısız olur; app.log büyür.
+        for (int i = 0; i < 30; i++) log.Info(new string('b', 40));
+        Assert.True(new FileInfo(Path0).Length > 200,
+            "test kurulumu hatali: rotasyon engellenmemis");
+
+        // Engeli kaldır ve TEK bir satır yaz.
+        // Hata geri gelseydi _size sifirlanmis olurdu, bu tek satir maxBytes'in
+        // cok altinda kalirdi ve rotasyon tetiklenmezdi.
+        // Duzeltmeyle _size gercek (buyuk) boyutta kaldigi icin rotasyon hemen tetiklenir.
+        hold.Dispose();
+        log.Info("tetikleyici");
+
+        Assert.True(new FileInfo(Path0).Length < 200,
+            $"rotasyon yeniden denenmedi, app.log hala {new FileInfo(Path0).Length} bayt");
     }
 }
