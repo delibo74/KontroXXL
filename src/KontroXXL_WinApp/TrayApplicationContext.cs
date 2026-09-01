@@ -1,7 +1,6 @@
 using System;
 using System.Drawing;
 using System.Windows.Forms;
-using System.IO.Ports;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -26,7 +25,7 @@ namespace KontroXXL_WinApp
         private NotifyIcon trayIcon;
         private MainForm mainForm;
         private AppConfig config;
-        private SerialPort serialPort;
+        private SerialLink serial;
         private HttpClient httpClient;
         private CoreAudioController audioController;
         private System.Windows.Forms.Timer updateTimer;
@@ -106,10 +105,12 @@ namespace KontroXXL_WinApp
                 cms.Items.Add("Arayüzü Aç", null, (s, e) => ShowMainForm());
                 cms.Items.Add("Yeniden Yükle", null, (s, e) => Reload());
                 cms.Items.Add(new ToolStripSeparator());
-                cms.Items.Add("Çıkış", null, (s, e) => { 
+                cms.Items.Add("Çıkış", null, (s, e) => {
                     SendGoodbye();
-                    trayIcon.Visible = false; 
-                    Application.Exit(); 
+                    serial?.Dispose();
+                    (log as IDisposable)?.Dispose();   // ILog dispose edilebilir olmak zorunda değil
+                    trayIcon.Visible = false;
+                    Application.Exit();
                 });
 
                 Microsoft.Win32.SystemEvents.PowerModeChanged += (s, e) => { if (e.Mode == Microsoft.Win32.PowerModes.Suspend) SendGoodbye(); };
@@ -196,7 +197,8 @@ namespace KontroXXL_WinApp
                 else
                     httpClient.DefaultRequestHeaders.Authorization = null;
 
-                if (serialPort != null && serialPort.IsOpen) { try { serialPort.Close(); } catch { } }
+                serial?.Dispose();
+                serial = null;
                 if (config.EnableArduinoModule) InitSerial();
 
                 nasLastConn = false;
@@ -213,57 +215,28 @@ namespace KontroXXL_WinApp
             } catch { return SystemIcons.Application; }
         }
 
-        private void InitSerial() {
-            try {
-                string targetPort = config.ArduinoPort;
-                bool needsDetect = string.IsNullOrEmpty(targetPort) || targetPort == "COM4";
-                string detected = AutoDetectArduino();
-                if (!string.IsNullOrEmpty(detected) && (needsDetect || !SerialPort.GetPortNames().Contains(targetPort))) {
-                    Log($"Arduino otomatik algilandi: {detected}");
-                    targetPort = detected;
-                }
+        private void InitSerial()
+        {
+            serial = new SerialLink(log,
+                preferredPort: () => config.ArduinoPort,
+                baud: () => config.ArduinoBaud,
+                autoDetect: () => string.IsNullOrEmpty(config.ArduinoPort));
 
-                if (string.IsNullOrEmpty(targetPort)) return;
-                Log($"Seri port aciliyor: {targetPort} @ {config.ArduinoBaud} Baud");
-                if (serialPort != null && serialPort.IsOpen) serialPort.Close();
-                serialPort = new SerialPort(targetPort, config.ArduinoBaud);
-                serialPort.DtrEnable = true;
-                serialPort.RtsEnable = true;
-                serialPort.DataReceived += (s, e) => {
-                    try {
-                        string line = serialPort.ReadLine()?.Trim();
-                        if (string.IsNullOrEmpty(line)) return;
-                        log.Debug("Arduino'dan gelen: " + line);
-
-                        if (line.StartsWith("EV:")) HandleArduinoEvent(line.Substring(3));
-                        else if (line == "CMD:READY" || line == "CMD:UPDATE") { RunOnUi(() => UpdateLCD(true)); Task.Run(() => PushArduinoData()); }
-                        else if (line == "CMD:APPS" || line == "CMD:POOLS" || line == "CMD:SHORTCUTS") { Task.Run(() => PushArduinoData()); }
-                    } catch (Exception ex) { Log("Seri veri isleme hatasi: " + ex.Message); }
-                };
-                serialPort.Open();
-                Log("Seri port acildi.");
+            serial.Connected += () => {
+                config.ArduinoPort = serial.CurrentPort;
                 SendData("ON");
-                config.ArduinoPort = targetPort; config.Save();
-            } catch (Exception ex) { Log("Seri port acma hatasi: " + ex.Message); }
-        }
+                RunOnUi(() => UpdateLCD(forced: true));
+                _ = PushArduinoData();
+            };
 
-        private string AutoDetectArduino() {
-            try {
-                using (var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_PnPEntity WHERE Caption LIKE '%(COM%)'")) {
-                    var ports = searcher.Get();
-                    foreach (var port in ports) {
-                        string caption = port["Caption"]?.ToString();
-                        if (string.IsNullOrEmpty(caption)) continue;
-                        if (caption.Contains("Arduino") || caption.Contains("USB Serial") || caption.Contains("CH340") || caption.Contains("CP210")) {
-                            int start = caption.LastIndexOf("(COM") + 1;
-                            int end = caption.LastIndexOf(")");
-                            if (start > 0 && end > start) return caption.Substring(start, end - start);
-                        }
-                    }
-                }
-            } catch { }
-            var pNames = SerialPort.GetPortNames();
-            return pNames.Length > 0 ? pNames[pNames.Length - 1] : null;
+            serial.LineReceived += line => {
+                log.Debug("Arduino'dan gelen: " + line);
+                if (line.StartsWith("EV:")) HandleArduinoEvent(line.Substring(3));
+                else if (line == "CMD:READY" || line == "CMD:UPDATE") { RunOnUi(() => UpdateLCD(true)); _ = PushArduinoData(); }
+                else if (line == "CMD:APPS" || line == "CMD:POOLS" || line == "CMD:SHORTCUTS") _ = PushArduinoData();
+            };
+
+            serial.Start();
         }
 
         private async Task UpdateSystemInfo() {
@@ -430,7 +403,7 @@ namespace KontroXXL_WinApp
 
         private void UpdateLCD(bool forced = false)
         {
-            if (serialPort == null || !serialPort.IsOpen) return;
+            if (serial == null || !serial.IsConnected) return;
 
             var now = DateTime.Now;
             if (forced && (now - lastLcdUpdate).TotalMilliseconds < 30) return;
@@ -475,13 +448,7 @@ namespace KontroXXL_WinApp
             catch { return 0; }
         }
 
-        private void SendData(string msg)
-        {
-            if (serialPort != null && serialPort.IsOpen)
-            {
-                try { serialPort.Write(msg + "\n"); } catch { }
-            }
-        }
+        private void SendData(string msg) => serial?.Send(msg);
 
         private void SendGoodbye()
         {
