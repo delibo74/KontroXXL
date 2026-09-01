@@ -11,6 +11,16 @@ public class LcdMenuModelTests
     static LcdTransition Apply(LcdMenuState s, LcdInput i, MenuCounts? c = null)
         => LcdMenuModel.Apply(s, i, c ?? Counts);
 
+    static int MaxFor(LcdMode mode, MenuCounts c) => mode switch
+    {
+        LcdMode.Menu => LcdMenuModel.MenuItemCount,
+        LcdMode.Apps => c.Apps,
+        LcdMode.Pools => c.Pools,
+        LcdMode.Shortcuts => c.Shortcuts,
+        LcdMode.NasPower => LcdMenuModel.NasPowerItemCount,
+        _ => 0,
+    };
+
     [Fact]
     public void Home_up_and_down_change_volume_without_changing_state()
     {
@@ -148,10 +158,25 @@ public class LcdMenuModelTests
         for (int i = 0; i < 5000; i++)
         {
             var counts = new MenuCounts(rng.Next(0, 6), rng.Next(0, 6), rng.Next(0, 6));
-            s = LcdMenuModel.Apply(s with { Mode = modes[rng.Next(modes.Length)] },
-                                   inputs[rng.Next(inputs.Length)], counts).State;
+            var before = s with { Mode = modes[rng.Next(modes.Length)] };
+            var t = LcdMenuModel.Apply(before, inputs[rng.Next(inputs.Length)], counts);
+            s = t.State;
+
             Assert.True(s.Index >= 0, $"negatif index: {s}");
             Assert.InRange(s.Page, 0, 3);
+
+            // Asıl koruma: index, SONUÇ modunun liste uzunluğunu asla aşmamalı.
+            // Boş listede 0 konvansiyondur, tek istisna odur.
+            int max = MaxFor(s.Mode, counts);
+            Assert.True(s.Index == 0 || s.Index < max,
+                $"index tasti: {s}, max={max}, counts={counts}");
+
+            // Yan etki indeksi de gerçek listenin içine düşmeli — çağıran
+            // bununla doğrudan appsList[i] / Shortcuts[i] erişimi yapıyor.
+            if (t.Effect == LcdEffect.ToggleApp)
+                Assert.InRange(t.EffectIndex, 0, Math.Max(0, counts.Apps - 1));
+            if (t.Effect == LcdEffect.RunShortcut)
+                Assert.InRange(t.EffectIndex, 0, Math.Max(0, counts.Shortcuts - 1));
         }
     }
 }
