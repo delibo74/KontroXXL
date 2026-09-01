@@ -16,6 +16,7 @@ using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Net.NetworkInformation;
 using System.IO;
+using KontroXXL.Core.Logging;
 
 namespace KontroXXL_WinApp
 {
@@ -58,8 +59,7 @@ namespace KontroXXL_WinApp
         private DateTime lastPcTempQuery = DateTime.MinValue;
         private string cachedNasInterface = null;
 
-        private string logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app.log");
-        private StreamWriter _logWriter;
+        private ILog log = NullLog.Instance;
         private JArray lastSvcsArr = new JArray();
 
         // LCD alert ticker
@@ -71,12 +71,10 @@ namespace KontroXXL_WinApp
 
         public TrayApplicationContext()
         {
-            // F12: Log rotation on startup — keep log under 1 MB
             try {
-                if (File.Exists(logPath) && new FileInfo(logPath).Length > 1_048_576)
-                    File.Copy(logPath, logPath + ".bak", overwrite: true);
-                _logWriter = new StreamWriter(logPath, append: true, System.Text.Encoding.UTF8) { AutoFlush = false };
-            } catch { _logWriter = null; }
+                string logFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app.log");
+                log = new RollingFileLogger(logFile, LogLevel.Info);
+            } catch { log = NullLog.Instance; }
             Log("Uygulama baslatiliyor...");
             try
             {
@@ -156,14 +154,7 @@ namespace KontroXXL_WinApp
             }
         }
 
-        private void Log(string msg)
-        {
-            try {
-                string line = $"[{DateTime.Now:HH:mm:ss}] {msg}{Environment.NewLine}";
-                if (_logWriter != null) _logWriter.Write(line);
-                else File.AppendAllText(logPath, line);
-            } catch { }
-        }
+        private void Log(string msg) => log.Info(msg);
 
         private void WireFormEvents(MainForm form)
         {
@@ -249,7 +240,7 @@ namespace KontroXXL_WinApp
                     try {
                         string line = serialPort.ReadLine()?.Trim();
                         if (string.IsNullOrEmpty(line)) return;
-                        Log("Arduino'dan gelen: " + line);
+                        log.Debug("Arduino'dan gelen: " + line);
 
                         if (line.StartsWith("EV:")) HandleArduinoEvent(line.Substring(3));
                         else if (line == "CMD:READY" || line == "CMD:UPDATE") { UpdateLCD(true); Task.Run(() => PushArduinoData()); }
