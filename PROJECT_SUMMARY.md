@@ -6,6 +6,8 @@ The project has been migrated to a high-performance **Thin Client** architecture
 - **Windows App (C# - .NET 8.0)**: Acts as the "Brain". It handles all data fetching (WMI, NVIDIA SMI, TrueNAS API), UI logic, menu navigation, and formatting.
 - **Arduino (C++)**: Acts as the "Terminal". It only handles the physical LCD (16x2 I2C), rotary encoder input, and a back button. It communicates with the PC via a simple string-based protocol.
 
+**Faz 1 (sağlamlaştırma) güncellemesi:** Windows App artık tek proje değil, iki proje. `src/KontroXXL.Core` platformdan bağımsız saf mantığı (LCD biçimlendirme, menü durum makinesi, log, config) barındırır ve 150 xUnit testiyle donanımsız doğrulanır; `src/KontroXXL_WinApp` WinForms UI'sini, tray'i ve donanım erişimini taşır. Bkz. `DOCS.md` §5.3.
+
 ## 📡 Communication Protocol
 | Direction | Command | Description |
 |-----------|---------|-------------|
@@ -28,15 +30,17 @@ The project has been migrated to a high-performance **Thin Client** architecture
 - [x] **Navigation**: Rotary encoder menu system with page cycling.
 - [x] **Reliability**: 
     - [x] Mutex-based single instance control.
-    - [x] Auto-reconnect serial system.
-    - [x] Cache-based startup (no empty screens).
+    - [x] Auto-reconnect serial system — `SerialLink`, 2 saniyelik izleyici döngüsüyle kablo çekilip takıldığında kendini toparlar (Faz 1, A2).
+    - [x] Cache-based startup (no empty screens) — artık gerçekten diske iniyor: atomik yazım + dirty-flag flush (Faz 1, A4).
     - [x] Rotary encoder detent tolerance (debounce).
+    - [x] Log rotation — `app.log` 1 MB'ı geçince `app.1.log`/`.2`/`.3`'e döner, sınırsız büyümüyor (Faz 1, A3).
+    - [x] Auto-Discovery — `SerialLink.DetectArduinoPort` WMI ile Arduino/CH340/CP210x cihazını arıyor; Ayarlar'da COM port alanı boş bırakılırsa devreye giriyor.
 
 ## 📝 TODO List
 - [ ] **Multiple Pools**: Support for selecting and viewing multiple storage pools.
-- [ ] **Config UI**: Add a setting in the Windows Dashboard to change update intervals.
-- [ ] **Auto-Discovery**: Auto-detect Arduino COM port.
+- [ ] **Config UI**: Add a setting in the Windows Dashboard to change update intervals (bugün yalnızca `config.json`'dan elle değiştiriliyor — `LcdIntervalMs`/`PcIntervalMs`/`NasIntervalMs`/`ConfigFlushIntervalMs`).
 - [ ] **Theming**: Dark/Light mode support for the Windows Dashboard.
+- [ ] **Resizable Dashboard (Faz 4 — Avalonia)**: `MainForm` penceresi hâlâ sabit boyutlu (`MinimumSize == MaximumSize`).
 
 ## 📈 Next Step: Graphical Stats
 We are adding a new "Graphs" menu. This will use 8 custom characters mapped to different bar heights (0-8 pixels) to show a 16-column history graph of any tracked metric.

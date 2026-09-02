@@ -6,19 +6,20 @@
 - [x] **Premium Tactical UI:** Dashboard tamamen baştan tasarlandı. Kenarlıksız (borderless) form, yan menü navigasyonu, neon glow efektleri ve modern taktikal fontlar (Impact/Segoe UI Semibold) eklendi.
 - [x] **Bağımsız Çalışma:** Arduino veri akışı artık Dashboard açık olmasa bile Tray üzerinden kesintisiz devam ediyor.
 - [x] **Kalıcı Veri:** Kısayollar ve son bilinen NAS istatistikleri `config.json` içerisinde önbelleğe alınıyor. Açılışta doğrudan son verilerle başlanıyor.
-- [x] **Türkçe Karakter Fix:** Uygulama ve kısayol isimleri LCD'ye gönderilmeden önce ASCII (İngilizce) formatına otomatik normalize ediliyor.
+- [x] **Türkçe Karakter Fix:** Uygulama ve kısayol isimleri LCD'ye gönderilmeden önce `KontroXXL.Core.Lcd.LcdText.Sanitize` ile ASCII (İngilizce) formatına normalize ediliyor — 12 Türkçe harf birebir karşılıkla değiştiriliyor, uzunluk korunuyor.
 
 ## ⚠️ ARDUINO & GÜÇ YÖNETİMİ
 
 - [x] **Otomatik Kapanma/Açılma:** Bilgisayar kilitlendiğinde veya kapandığında Arduino'ya `shutdown` sinyali gönderiliyor; LCD kararıyor ve "SYSTEM OFF" moduna geçiyor.
 - [x] **Bağlantı Kontrolü:** Arduino artık "ESTABLISHING..." (Bağlanıyor) modunda başlıyor ve PC'den ilk veriyi alana kadar bekliyor.
-- [x] **Otomatik Dashboard:** Dashboard artık esnek (resizable) ve tam ekran uyumlu hale getirildi.
+- [ ] **Otomatik Dashboard:** Dashboard hâlâ esnek (resizable) değil — `MainForm.cs`'de `MinimumSize = MaximumSize = new Size(1000, 680)` pencereyi kilitliyor. Yeniden boyutlandırma/tam ekran uyumu **Faz 4 (Avalonia geçişi)** kapsamına ertelendi.
 
 ## 🛠️ GELECEK PLANLARI (TODO)
 
-- [ ] **NAS Alert Bildirimleri:** Kritik TrueNAS alertlerini Windows tray bildirimi olarak yansıtma.
-- [ ] **Config Şifreleme:** API anahtarını DPAPI ile şifreleme.
-- [ ] **Versiyon Kontrolü:** Otomatik güncelleme denetimi.
+- [ ] **NAS Alert Bildirimleri (Faz 4):** Kritik TrueNAS alertlerini Windows tray bildirimi olarak yansıtma. Bugün LCD ticker'ı var (`_lcdTickerText`, yeni alarmda 10 sn kayan yazı) ama Windows tray balonu yok.
+- [ ] **Config Şifreleme (Faz 2):** API anahtarını DPAPI ile şifreleme. Bugün `TruenasApiKey` `config.json` içinde düz metin.
+- [ ] **Versiyon Kontrolü (Faz 2 — Velopack):** Otomatik güncelleme denetimi.
+- [ ] **Dashboard Yeniden Boyutlandırma (Faz 4 — Avalonia):** Yukarıdaki "Otomatik Dashboard" maddesiyle aynı iş; WinForms'ta pencere kilitli kalacak, çözüm Avalonia geçişiyle geliyor.
 
 ---
 **Teknik Not:** Uygulama `net8.0-windows` üzerinde SingleFile olarak derlendi. `app.log` dosyası üzerinden çalışma loglarını takip edebilirsiniz.

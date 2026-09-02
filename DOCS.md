@@ -1,6 +1,6 @@
 # KontroXXL — Developer Documentation
 
-> **Son Güncelleme:** 2026-03-28 | **Versiyon:** v2 | **Platform:** Windows 10/11 · .NET 8.0 · Arduino ATmega328
+> **Son Güncelleme:** 2026-09-02 | **Versiyon:** v3 (Faz 1: sağlamlaştırma) | **Platform:** Windows 10/11 · .NET 8.0 · Arduino ATmega328
 
 ---
 
@@ -33,24 +33,34 @@
 
 ## 2. Dosya Haritası
 
+Faz 1 (Task 1) klasör yapısını `src/`/`tests/`/`firmware/` altına taşıdı — aşağıdaki ağaç `git ls-files` ile doğrulanmış güncel hâldir:
+
 ```
-menu/
-├── KontroXXL_WinApp/
-│   ├── TrayApplicationContext.cs  ← ANA MOTOR
-│   ├── MainForm.cs                ← UI
-│   ├── Models.cs                  ← AppConfig, ShortcutItem
-│   ├── Program.cs                 ← Entry point + mutex
-│   └── KontroXXL_WinApp.csproj
-├── arduino_kontrol/
-│   └── arduino_kontrol.ino
-├── Release_v2/                    ← Çalıştırılabilir build
-│   ├── KontroXXL_WinApp.exe
-│   ├── config.json                ← İlk çalıştırmada oluşur
-│   └── app.log                    ← Runtime log (>1MB → rotate)
+nas-lcd/
+├── src/
+│   ├── KontroXXL_WinApp/              ← WinForms uygulaması (Faz 4'te Avalonia ile değişecek)
+│   │   ├── TrayApplicationContext.cs  ← ANA MOTOR
+│   │   ├── MainForm.cs                ← UI
+│   │   ├── Models.cs                  ← AppConfig, ShortcutItem
+│   │   ├── SerialLink.cs              ← Arduino seri bağlantısı, yeniden bağlanma (A2)
+│   │   ├── Program.cs                 ← Entry point + mutex
+│   │   └── KontroXXL_WinApp.csproj
+│   └── KontroXXL.Core/                ← Platform-bağımsız saf mantık (Task 1), bkz. §5.3
+│       ├── Lcd/, Logging/, Serial/, Configuration/
+│       └── KontroXXL.Core.csproj
+├── tests/
+│   └── KontroXXL.Core.Tests/          ← xUnit, 150 test, donanım gerektirmez
+├── firmware/
+│   ├── arduino_kontrol/arduino_kontrol.ino
+│   └── eski-versiyon.ino.txt          ← v2 öncesi referans
 ├── tools/
-│   └── IconGen.cs/.csproj         ← Tek seferlik ikon aracı
-└── OPTIMIZATIONS.md               ← 26/26 bulgu tamamlandı
+│   └── IconGen.cs/.csproj             ← Tek seferlik ikon aracı
+├── docs/superpowers/                  ← Şartname ve faz planları
+├── KontroXXL.sln
+└── OPTIMIZATIONS.md                   ← 26/26 bulgu tamamlandı
 ```
+
+`config.json` ve `app.log` derleme çıktısının (`bin/.../`) yanında runtime'da oluşur — `Release_v2/` artık depoda değil, `.gitignore`'da.
 
 ---
 
@@ -58,34 +68,40 @@ menu/
 
 ### 3.1 Başlatma Akışı
 
+Faz 1'de yeniden yazıldı (Task 6/7/9/10). Gerçek sıra, `TrayApplicationContext()` kurucusundan:
+
 ```
 Program.Main()
   └─► new TrayApplicationContext()
-        ├─ AppConfig.Load()           // config.json oku
-        ├─ InitLog()                  // app.log aç (>1MB → rotate to .bak)
-        ├─ new CoreAudioController()  // ses cihazı
-        ├─ InitSerial()               // Arduino COM port
-        ├─ InitHttpClient()           // SSL bypass: sadece TruenasIp'e
-        ├─ InitPerformanceCounters()  // CPU + RAM (bir kez oluşturulur)
-        ├─ new MainForm()             // UI
-        └─ updateTimer.Start()        // 1 sn interval
+        ├─ new RollingFileLogger("app.log")   // A3: gerçekten döner, açılamazsa NullLog'a düşer
+        ├─ AppConfig.Load()                   // config.json oku (KontroXXL.Core.Configuration.JsonFileStore üzerinden)
+        ├─ InitSerial() → serial.Start()      // A2: SerialLink arka plan thread'inde bağlanmayı dener (yalnızca EnableArduinoModule=true ise)
+        ├─ new HttpClientHandler()            // SSL bypass: sadece TruenasIp'e
+        ├─ new CoreAudioController()          // ses cihazı
+        ├─ PerformanceCounter × 3             // CPU%, CPU freq, RAM — bir kez oluşturulur
+        ├─ new MainForm(config)
+        ├─ tray ikonu + context menu + SystemEvents handler'ları (PowerModeChanged/SessionEnding/SessionEnded)
+        └─ dört timer'ı başlat: lcdTimer, pcTimer, nasTimer, flushTimer
 ```
 
-### 3.2 Update Döngüsü (her 1 saniye)
+`SerialLink.Start()` senkron değildir — bağlantı 2 saniyelik bir izleyici döngüsünde arka planda kurulur (A2), kurucu onu beklemez.
 
-```
-updateTimer.Tick → UpdateSystemInfo() [async Task]
-  ├─ GetCpuUsage()     → PerformanceCounter (cached, Thread.Sleep yok)
-  ├─ GetCpuSpeed()     → WMI MaxClockSpeed × %freq
-  ├─ GetRamUsage()     → PerformanceCounter (cached)
-  ├─ GetGpuInfo()      → nvidia-smi (2 sn cache — process her tick değil)
-  ├─ GetPcTemp()       → WMI ThermalZone (5 sn cache)
-  ├─ GetPcNetSpeed()   → NetworkInterface foreach (LINQ yok, iterator alloc yok)
-  ├─ GetTruenasData()  → Task.WhenAll (6 endpoint paralel) ←── kritik
-  ├─ UpdatePcStats()   → MainForm UI güncelle
-  ├─ UpdateNasStats()  → MainForm UI güncelle
-  └─ UpdateLCD()       → Serial komut gönder
-```
+### 3.2 Dört Bağımsız Döngü (Task 10, A8/A4)
+
+v2'nin tek 500 ms `updateTimer`'ı (her tick'te 8 TrueNAS isteği) kaldırıldı. Yerine dört `System.Windows.Forms.Timer`, hepsi `config.json`'dan ayarlanabilir:
+
+| Timer | Alan (config.json) | Varsayılan | Görev |
+|---|---|---|---|
+| `lcdTimer` | `LcdIntervalMs` | 200 ms | `UpdateLCD()` — LCD kare üretir ve seri porta yazar |
+| `pcTimer` | `PcIntervalMs` | 1000 ms | `UpdatePcTelemetry()` — CPU/RAM/GPU/Net/Isı, `Task.Run` üzerinden arka planda |
+| `nasTimer` | `NasIntervalMs` | 5000 ms | `UpdateNasTelemetry()` → `GetTruenasData()` — `Task.WhenAll` ile 8 endpoint paralel, yalnızca `EnableNasModule && TruenasIp` doluysa |
+| `flushTimer` | `ConfigFlushIntervalMs` | 30000 ms | `config.FlushIfDirty()` — kirli işaretliyse `config.json`'ı diske yazar |
+
+Her interval `Math.Max(alt sınır, config.XyzIntervalMs)` ile korunur (LCD ≥ 50 ms, PC ≥ 250 ms, NAS ≥ 1000 ms, flush ≥ 5000 ms) — çok küçük bir değer LCD'yi veya ağı boğamaz.
+
+`pcTimer` ve `nasTimer`, telemetri yazımlarını `lock (config.SyncRoot)` altında yapar; `AppConfig.Save()` da serileştirmeyi aynı kilit altında yapar (Task 9/10) — arka plan thread'inden yazılan `Last*` alanları ile UI thread'inden tetiklenen `Save()` artık yarışmaz.
+
+`UpdateLCD()` LCD durumuna dokunan tek yerdir ve yalnızca UI thread'inde çalışır: seri porttan gelen `EV:*`/`CMD:*` olayları `BeginInvoke` ile UI thread'ine sıraya alınır (A7).
 
 ### 3.3 TrueNAS API (Paralel)
 
@@ -117,21 +133,29 @@ ServerCertificateCustomValidationCallback = (msg, cert, chain, errors) => {
 
 ### 4.1 PC → Arduino Komutları (Serial, `\n` sonlandırmalı)
 
+`firmware/arduino_kontrol/arduino_kontrol.ino`'daki `strcmp`/`strncmp` dallarıyla doğrulandı:
+
 | Komut | Açıklama | Örnek |
 |-------|----------|-------|
 | `L0=<16char>` | Satır 0 yaz | `L0=CPU:76%   3.60G` |
 | `L1=<16char>` | Satır 1 yaz | `L1=RAM:42%   04:35` |
 | `B1=<0-100>` | Bar grafik | `B1=72` |
-| `PING` | Bağlantı testi | Cevap: `PONG` |
+| `CLR` | Ekranı temizle | — |
+| `ON` / `OFF` | Backlight fade in/out | Çıkışta `SendGoodbye()` `OFF` gönderir |
+
+> Not: bu doküman daha önce burada bir `PING`/`PONG` komutu listeliyordu; firmware'de böyle bir komut yok, kaldırıldı.
 
 ### 4.2 Arduino → PC Mesajları
 
 | Mesaj | Tetikleyici |
 |-------|-------------|
-| `VOL+` | Encoder saat yönü |
-| `VOL-` | Encoder ters yön |
-| `BTN` | Kısa basış |
-| `LONGBTN` | Uzun basış (>600ms) |
+| `EV:UP` | Encoder saat yönü |
+| `EV:DN` | Encoder ters yön |
+| `EV:CLICK` | Buton basışı |
+| `EV:BACK` | Geri butonu |
+| `CMD:READY` | Açılışta veya 2 sn içinde PC'den veri gelmezse — Arduino "bağlantı bekleniyor" moduna girdiğini bildirir |
+
+> Not: bu doküman daha önce `VOL+`/`VOL-`/`BTN`/`LONGBTN` listeliyordu; gerçek mesajlar yukarıdaki `EV:*`/`CMD:READY`. `TrayApplicationContext.cs` ayrıca `CMD:UPDATE`/`CMD:APPS`/`CMD:POOLS`/`CMD:SHORTCUTS`'ı da işler, ama mevcut firmware bunları hiç göndermiyor (PC tarafında ileriye dönük hazırlık).
 
 ### 4.3 LCD Sayfaları (Home Mode)
 
@@ -146,12 +170,16 @@ ServerCertificateCustomValidationCallback = (msg, cert, chain, errors) => {
 
 ### 4.4 LCD Modları
 
+Faz 1'den beri bu durum makinesi `KontroXXL.Core.Lcd.LcdMenuModel` içinde saf bir fonksiyon (`Apply`), bkz. §5.3.
+
 ```csharp
-enum LcdMode { Home, Menu, NasApps, NasPools }
-// Home:    döngüsel sayfa (encoder → ileri/geri)
-// Menu:    kısa basış açar, encoder seçim, basış onayla
-// NasApps: app listesi, start/stop
-// NasPools: storage pool doluluk
+enum LcdMode { Home, Menu, Apps, Pools, Shortcuts, NasPower }
+// Home:       döngüsel sayfa (encoder Up/Down → ses; Back → sayfa ileri)
+// Menu:       kısa basış (Click) açar, 4 seçenek: NAS APPS / NAS POOLS / SHORTCUTS / NAS POWER
+// Apps:       NAS app listesi, Click → start/stop toggle
+// Pools:      storage pool doluluk (yalnızca görüntüleme, Click etkisiz)
+// Shortcuts:  kısayol listesi, Click → çalıştır ve Home'a dön
+// NasPower:   REBOOT / SHUTDOWN / CANCEL, Click → NAS'a komut gönder ve Home'a dön
 ```
 
 ### 4.5 Volüm Override
@@ -193,6 +221,26 @@ void lcdPad(const char* s) {    // doğrudan LCD'ye yazar, String oluşturmaz
 | 3 | Rotary DT |
 | 4 | Rotary Buton |
 
+### 5.3 Core Kütüphanesi
+
+Faz 1'de (Task 1) `src/KontroXXL.Core/` adında yeni, `net8.0` (Windows'a bağımlı olmayan) bir class library eklendi. Amaç: LCD biçimlendirme, menü durum makinesi, log ve config yazımı gibi saf mantığı donanım ve UI'dan ayırıp birim testlerine açmak (v2'de bunların hepsi `TrayApplicationContext.cs` içinde, test edilemez şekilde iç içeydi).
+
+| Dosya | Sorumluluk |
+|---|---|
+| `Lcd/LcdText.cs` | `Sanitize`/`Fit`/`Scroll` — Türkçe karakter translitasyonu ve 16 karakter genişlik garantisi |
+| `Lcd/LcdMenuModel.cs` | `LcdMenuModel.Apply` — girdiye (Up/Down/Click/Back) göre saf durum geçişi, index her zaman clamp'lenir (A7) |
+| `Lcd/LcdFormatter.cs` | `LcdMenuState` + `LcdViewData` + `LcdRenderContext` → `LcdFrame` (iki satır, opsiyonel bar değeri) |
+| `Lcd/LcdFrame.cs` | Ekrana giden tek kare — `Line0`/`Line1` her zaman tam 16 karakter, `BarValue` doluysa çağıran L1 yerine B1 gönderir |
+| `Lcd/LcdViewData.cs` | Formatter'ın ihtiyaç duyduğu değişmez anlık görüntü + `LcdRenderContext` (zaman/kaydırma gibi yan etkiler formatter dışında tutulur) |
+| `Logging/ILog.cs` | `ILog` arayüzü + `NullLog` (log açılamadığında veya testte kullanılan no-op) |
+| `Logging/RollingFileLogger.cs` | Gerçekten dönen dosya logu — `app.log` → `app.1.log` → `app.2.log` → `app.3.log`, seviye filtresi (A3) |
+| `Serial/SerialLineBuffer.cs` | Ham bayt akışını `\n` sınırlarında satırlara böler, taşmada satırı düşürür — `SerialPort.ReadLine()`'ın bloklayan/istisna fırlatan davranışı yerine |
+| `Configuration/JsonFileStore.cs` | `WriteAtomic`/`ReadOrNull` — `.tmp`'ye yaz, `File.Replace` ile yerine taşı; yarım yazımda `config.json` bozulmaz (A4) |
+
+**Katman kuralı (spec §4.1):** `KontroXXL.Core`, `System.Windows.Forms`, `System.IO.Ports`, `System.Management`, `Microsoft.Win32.Registry`, `AudioSwitcher.*` veya `Avalonia`'ya referans veremez. Kural `tests/KontroXXL.Core.Tests/ArchitectureTests.cs`'teki `Core_does_not_reference_platform_assemblies` testiyle derleme sonrası zorlanır — Core Assembly'sinin referans listesi bu yasaklı listeyle kesiştirilir.
+
+`tests/KontroXXL.Core.Tests/` bu kütüphanenin xUnit test projesidir (150 test, donanım gerektirmez).
+
 ---
 
 ## 6. MainForm.cs — UI
@@ -200,7 +248,7 @@ void lcdPad(const char* s) {    // doğrudan LCD'ye yazar, String oluşturmaz
 ### 6.1 Kontrol Hiyerarşisi
 
 ```
-Form (960×720, FormBorderStyle.None, yuvarlak köşe)
+Form (1000×680, sabit boyut — MinimumSize == MaximumSize, FormBorderStyle.None, yuvarlak köşe)
 ├── topBar (Dock=Top, H=40) — sürükle/taşı olayı burada
 ├── sideNav (Dock=Left, W=220) — 5 nav butonu
 └── contentContainer (Dock=Fill)
@@ -257,6 +305,12 @@ NoScrollPanel (AutoScroll=true) → scroll pozisyonu tracked, scrollbar yok
 | `Last*` alanlar | 0 | Startup cache — UI hemen dolu görünür |
 | `LastNasServicesJ` | JArray | Servis ID lookup için cache |
 | `_extra` | IDictionary | `[JsonExtensionData]` — eski alanları yok sayar |
+| `LcdIntervalMs` / `PcIntervalMs` / `NasIntervalMs` / `ConfigFlushIntervalMs` | 200 / 1000 / 5000 / 30000 | Dört timer'ın periyodu (Faz 1, A8) — bkz. §3.2 |
+| `SourcePath` | exe yanındaki `config.json` | `[JsonIgnore]`, `Save()`'in yazdığı gerçek yol |
+| `SyncRoot` | `new object()` | `[JsonIgnore]`, `Save()` serileştirmesi ve arka plan telemetri yazımları aynı kilidi paylaşır (Faz 1, A4) |
+| `MarkDirty()` / `FlushIfDirty()` | — | Kirli bayrak — her `Last*` yazımı diske inmez, `flushTimer` tetiklediğinde iner |
+
+`Save()` artık `File.Replace` ile atomik yazıyor (`KontroXXL.Core.Configuration.JsonFileStore.WriteAtomic`) — yazım ortasında çökmede `config.json` yarım kalmaz (A4).
 
 ---
 
@@ -266,8 +320,9 @@ NoScrollPanel (AutoScroll=true) → scroll pozisyonu tracked, scrollbar yok
 |-------|----------|----------|
 | `AudioSwitcher.AudioApi.CoreAudio` | 3.0.3 | Volüm okuma/yazma |
 | `Newtonsoft.Json` | 13.0.4 | TrueNAS JSON parse, config |
-| `System.IO.Ports` | 10.0.3 | Arduino serial |
-| `System.Management` | 10.0.3 | WMI (CPU hızı, PC sıcaklık) |
+| `System.IO.Ports` | 10.0.3 | Arduino serial (`SerialLink`, yalnızca `KontroXXL_WinApp`'te) |
+| `System.Management` | 10.0.3 | WMI (CPU hızı, PC sıcaklık, Arduino port algılama) |
+| `KontroXXL.Core` (proje referansı) | — | LCD/log/config saf mantığı — bkz. §5.3 |
 
 ---
 
@@ -332,6 +387,8 @@ else if (strncmp(cmd, "XX=", 3) == 0) {
 | TrueNAS ağ arayüzü | `enp3s0 → en7x → eno1 → eth0` sırası — otomatik keşif yok |
 | AudioSwitcher | .NET 4.x paketi (NU1701 suppressed), çalışıyor |
 | Single instance | Mutex ile — process kill sonrası Task Manager'dan temizle |
+| Dashboard boyutu | Sabit `1000×680`, yeniden boyutlandırılamaz (`MainForm.cs`) — Faz 4 (Avalonia) konusu |
+| Config konumu | `config.json` hâlâ exe'nin yanında, düz metin API anahtarıyla — Faz 2'de `%APPDATA%` + DPAPI'ye taşınacak |
 
 ---
 
@@ -344,4 +401,4 @@ else if (strncmp(cmd, "XX=", 3) == 0) {
 | GPU 0% | nvidia-smi yok | PATH'e ekle |
 | Uygulama açılmıyor | Mutex sıkışması | Task Manager → exe öldür |
 | COM port bağlanmıyor | Başka uygulama tutuyor | Arduino IDE / PuTTY kapat |
-| app.log büyüklüğü | Rotate çalışmadı | Elle sil — sonraki açılışta temiz başlar |
+| Arduino kabloyu çektim, geri takınca LCD gelmiyor | *(beklenmez — `SerialLink` 2 sn'de bir yeniden dener, A2)* | Yine de olursa uygulamayı yeniden başlat, `app.log`'da `Seri baglanti koptu` satırını ara |
