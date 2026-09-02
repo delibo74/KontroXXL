@@ -223,7 +223,14 @@ namespace KontroXXL_WinApp
                 autoDetect: () => string.IsNullOrEmpty(config.ArduinoPort));
 
             serial.Connected += () => {
-                config.ArduinoPort = serial.CurrentPort;
+                lock (config.SyncRoot)
+                {
+                    if (config.ArduinoPort != serial.CurrentPort)
+                    {
+                        config.ArduinoPort = serial.CurrentPort;
+                        config.MarkDirty();   // Task 10'un flush timer'i diske indirecek
+                    }
+                }
                 SendData("ON");
                 RunOnUi(() => UpdateLCD(forced: true));
                 _ = PushArduinoData();

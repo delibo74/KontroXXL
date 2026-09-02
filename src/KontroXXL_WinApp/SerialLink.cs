@@ -53,8 +53,13 @@ namespace KontroXXL_WinApp
         public void Stop()
         {
             try { _cts?.Cancel(); } catch { }
-            try { _loop?.Wait(3000); } catch { }
+
+            // Windows'ta SerialPort.BaseStream.ReadAsync iptali guvenilir sekilde
+            // onurlandirmiyor; takili okumayi gercekte cozen sey portun dispose
+            // edilmesidir. Beklemeden ONCE kapat, yoksa cikista UI 3 saniye donuyor.
             ClosePort();
+
+            try { _loop?.Wait(3000); } catch { }
             _loop = null;
         }
 
@@ -114,9 +119,10 @@ namespace KontroXXL_WinApp
             string target = ResolvePort();
             if (string.IsNullOrEmpty(target)) return false;
 
+            SerialPort p = null;
             try
             {
-                var p = new SerialPort(target, _baud()) { DtrEnable = true, RtsEnable = true };
+                p = new SerialPort(target, _baud()) { DtrEnable = true, RtsEnable = true };
                 p.Open();
                 _port = p;
                 CurrentPort = target;
@@ -126,6 +132,8 @@ namespace KontroXXL_WinApp
             }
             catch (Exception ex)
             {
+                // Acilamayan port nesnesi sizmasin — bu yol 2 saniyede bir tekrarlaniyor.
+                try { p?.Dispose(); } catch { }
                 _log.Debug($"Seri port acilamadi ({target}): {ex.Message}");
                 return false;
             }
