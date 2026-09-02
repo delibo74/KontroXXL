@@ -873,12 +873,29 @@ cp "$LOCALAPPDATA/Arduino15/packages/arduino/tools/avrdude/8.0.0-arduino1/etc/av
 
 ```bash
 cd "C:/Users/ibrahimk/Desktop/nas-lcd"
-echo "=== izlenen riskli dosyalar ==="
-git log --all --pretty=format: --name-only --diff-filter=A | sort -u | grep -iE "config\.json|\.log$|Release_v2|crash" || echo "TEMIZ"
-echo "=== gecmiste API anahtari deseni ==="
-git log --all -p | grep -cE "[A-Za-z0-9]{60,}" || echo "eslesme yok"
+
+echo "=== 1) gecmise hic riskli dosya girdi mi ==="
+git log --all --pretty=format: --name-only --diff-filter=A | sort -u \
+  | grep -iE "config\.json|\.log$|Release_v2|crash" || echo "TEMIZ"
+
+echo "=== 2) mevcut config.json'daki gercek anahtar gecmiste geciyor mu ==="
+# Deseni tahmin etme — diskteki gercek anahtari oku ve ONU ara.
+KEY=$(python -c "import json;print(json.load(open('config.json')).get('TruenasApiKey',''))" 2>/dev/null)
+if [ -n "$KEY" ]; then
+  git log --all -p -S"$KEY" --oneline || echo "TEMIZ - anahtar hicbir commit'te yok"
+else
+  echo "config.json'da duz metin anahtar yok (Task 2 sifreledi) - eski kopyalari da kontrol et"
+fi
+
+echo "=== 3) genel yuksek-entropi taramasi (elle degerlendirilecek) ==="
+git log --all -p | grep -nE "ApiKey|api_key|Bearer [A-Za-z0-9]" | head -20 || echo "eslesme yok"
 ```
-Her iki tarama da temiz olmalı. **Kirli çıkarsa dur ve bildir** — geçmiş temizlenmeden push edilmez.
+
+1 ve 2 **temiz olmak zorunda**. 3'ün çıktısı sayı değil, **elle okunacak bir liste** —
+kaynak kodda `TruenasApiKey` alan adının geçmesi normaldir, gerçek bir anahtar değeri
+görünmesi değildir. Farkı gözle ayır.
+
+**Herhangi biri kirli çıkarsa dur ve bildir** — geçmiş temizlenmeden push edilmez.
 
 - [ ] **Step 2: ONAY KAPISI 1** — depo adı ve görünürlük (public/private) Karaduman'a sorulur. Cevap alınmadan devam edilmez.
 
