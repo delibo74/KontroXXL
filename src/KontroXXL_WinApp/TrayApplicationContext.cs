@@ -17,6 +17,7 @@ using System.Net.NetworkInformation;
 using System.IO;
 using KontroXXL.Core.Logging;
 using KontroXXL.Core.Lcd;
+using KontroXXL.Core.Configuration;
 
 namespace KontroXXL_WinApp
 {
@@ -25,6 +26,7 @@ namespace KontroXXL_WinApp
         private NotifyIcon trayIcon;
         private MainForm mainForm;
         private AppConfig config;
+        private AppPaths paths;
         private SerialLink serial;
         private HttpClient httpClient;
         private CoreAudioController audioController;
@@ -70,14 +72,29 @@ namespace KontroXXL_WinApp
 
         public TrayApplicationContext()
         {
+            // A6: yazilabilir durum artik %APPDATA%\KontroXXL altinda. Logger da bu yolu
+            // kullanacagi icin goc, logger kurulumundan once ve ctor'un en basinda calisir.
+            paths = AppPaths.ForCurrentUser();
+            Directory.CreateDirectory(paths.Root);
+
+            string legacyConfig = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
+            bool migrated = ConfigMigrator.MigrateIfNeeded(legacyConfig, paths.ConfigFile);
+
             try {
-                string logFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app.log");
-                log = new RollingFileLogger(logFile, LogLevel.Info);
+                log = new RollingFileLogger(paths.LogFile, LogLevel.Info);
             } catch { log = NullLog.Instance; }
             Log("Uygulama baslatiliyor...");
             try
             {
-                config = AppConfig.Load();
+                config = AppConfig.Load(paths.ConfigFile);
+                if (migrated)
+                {
+                    lock (config.SyncRoot)
+                    {
+                        config.SchemaVersion = 3;
+                        config.MarkDirty();
+                    }
+                }
 
                 var handler = new HttpClientHandler() {
                     // F19: SSL bypass scoped to TrueNAS IP only — not a blanket accept-all

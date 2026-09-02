@@ -8,6 +8,9 @@ namespace KontroXXL_WinApp
 {
     public class AppConfig
     {
+        // Faz 2: yapilandirma semasi surumu. 3 = %APPDATA% donemi.
+        public int SchemaVersion { get; set; } = 3;
+
         public string ArduinoPort { get; set; } = "COM4";
         public int ArduinoBaud { get; set; } = 115200;
         public string TruenasIp { get; set; } = "";
