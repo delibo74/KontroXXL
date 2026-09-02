@@ -28,7 +28,9 @@ namespace KontroXXL_WinApp
         private SerialLink serial;
         private HttpClient httpClient;
         private CoreAudioController audioController;
-        private System.Windows.Forms.Timer updateTimer;
+        private System.Windows.Forms.Timer lcdTimer, pcTimer, nasTimer, flushTimer;
+        private bool isPcUpdating = false;
+        private bool isNasUpdating = false;
         private PerformanceCounter cpuActualFreqCounter;
         
         // LCD durumu tek bir referansta toplandı; yalnızca UI thread'inden değiştirilir (A7).
@@ -44,8 +46,7 @@ namespace KontroXXL_WinApp
         private DateTime volumeShowUntil = DateTime.MinValue;
         private DateTime lastLcdUpdate = DateTime.Now;
         private DateTime lastHeartbeat = DateTime.Now;
-        private bool isUpdatingData = false;
-        
+
         private long lastPcNetBytes = 0;
         private DateTime lastPcNetTime = DateTime.Now;
 
@@ -106,6 +107,7 @@ namespace KontroXXL_WinApp
                 cms.Items.Add("Yeniden Yükle", null, (s, e) => Reload());
                 cms.Items.Add(new ToolStripSeparator());
                 cms.Items.Add("Çıkış", null, (s, e) => {
+                    try { config.FlushIfDirty(); } catch { }
                     SendGoodbye();
                     serial?.Dispose();
                     (log as IDisposable)?.Dispose();   // ILog dispose edilebilir olmak zorunda değil
@@ -113,8 +115,8 @@ namespace KontroXXL_WinApp
                     Application.Exit();
                 });
 
-                Microsoft.Win32.SystemEvents.PowerModeChanged += (s, e) => { if (e.Mode == Microsoft.Win32.PowerModes.Suspend) SendGoodbye(); };
-                Microsoft.Win32.SystemEvents.SessionEnding += (s, e) => SendGoodbye();
+                Microsoft.Win32.SystemEvents.PowerModeChanged += (s, e) => { if (e.Mode == Microsoft.Win32.PowerModes.Suspend) { try { config.FlushIfDirty(); } catch { } SendGoodbye(); } };
+                Microsoft.Win32.SystemEvents.SessionEnding += (s, e) => { try { config.FlushIfDirty(); } catch { } SendGoodbye(); };
                 Microsoft.Win32.SystemEvents.SessionEnded += (s, e) => SendGoodbye();
 
                 trayIcon = new NotifyIcon() { 
@@ -125,26 +127,47 @@ namespace KontroXXL_WinApp
                 };
                 trayIcon.DoubleClick += (s, e) => ShowMainForm();
 
-                // Main Update Loop (Unified)
-                updateTimer = new System.Windows.Forms.Timer { Interval = 500 };
-                updateTimer.Tick += (s, e) => {
-                    // 1. Her zaman LCD'yi güncelle (Heartbeat dahil)
+                // A8: v2'de tek 500ms timer her tick'te 8 TrueNAS isteği tetikliyordu.
+                // Artık üç bağımsız periyot, hepsi config.json'dan ayarlanabilir.
+                lcdTimer = new System.Windows.Forms.Timer { Interval = Math.Max(50, config.LcdIntervalMs) };
+                lcdTimer.Tick += (s, e) => {
                     bool force = (DateTime.Now - lastHeartbeat).TotalSeconds > 4;
                     UpdateLCD(force);
                     if (force) lastHeartbeat = DateTime.Now;
-
-                    // 2. Sistem bilgilerini arka planda, bloklamadan güncelle
-                    if (!isUpdatingData)
-                    {
-                        isUpdatingData = true;
-                        Task.Run(async () => {
-                            try { await UpdateSystemInfo(); }
-                            catch (Exception ex) { Log("Async update error: " + ex.Message); }
-                            finally { isUpdatingData = false; }
-                        });
-                    }
                 };
-                updateTimer.Start();
+                lcdTimer.Start();
+
+                pcTimer = new System.Windows.Forms.Timer { Interval = Math.Max(250, config.PcIntervalMs) };
+                pcTimer.Tick += (s, e) => {
+                    if (isPcUpdating) return;
+                    isPcUpdating = true;
+                    Task.Run(() => {
+                        try { UpdatePcTelemetry(); }
+                        catch (Exception ex) { log.Error("PC telemetri hatasi", ex); }
+                        finally { isPcUpdating = false; }
+                    });
+                };
+                pcTimer.Start();
+
+                nasTimer = new System.Windows.Forms.Timer { Interval = Math.Max(1000, config.NasIntervalMs) };
+                nasTimer.Tick += (s, e) => {
+                    if (isNasUpdating || !config.EnableNasModule || string.IsNullOrEmpty(config.TruenasIp)) return;
+                    isNasUpdating = true;
+                    Task.Run(async () => {
+                        try { await UpdateNasTelemetry(); }
+                        catch (Exception ex) { log.Error("NAS telemetri hatasi", ex); }
+                        finally { isNasUpdating = false; }
+                    });
+                };
+                nasTimer.Start();
+
+                // A4: v2'de config.Save() yorum satırındaydı, Last* cache'i hiç diske inmiyordu.
+                flushTimer = new System.Windows.Forms.Timer { Interval = Math.Max(5000, config.ConfigFlushIntervalMs) };
+                flushTimer.Tick += (s, e) => {
+                    try { config.FlushIfDirty(); }
+                    catch (Exception ex) { log.Error("Config yazma hatasi", ex); }
+                };
+                flushTimer.Start();
 
                 Log("Baslangic islemleri tamamlandi.");
             }
@@ -246,37 +269,50 @@ namespace KontroXXL_WinApp
             serial.Start();
         }
 
-        private async Task UpdateSystemInfo() {
-            try {
-                int wc = (int)GetCpuUsage(), wr = (int)GetRamUsage();
-                double wn = GetPcNetSpeed(), cf = GetCpuSpeed();
-                var gpu = GetGpuInfo(); // (util, temp, fan)
-                int pt = GetPcTemp();
+        private void UpdatePcTelemetry()
+        {
+            int cpu = (int)GetCpuUsage(), ram = GetRamUsage();
+            double net = GetPcNetSpeed(), ghz = GetCpuSpeed();
+            var gpu = GetGpuInfo();
+            int temp = GetPcTemp();
 
-                config.LastCpu = wc; config.LastRam = wr; config.LastNetSpeed = wn; config.LastCpuFreq = cf;
+            // A4: yazim ve serilestirme ayni kilidi paylasmak zorunda (Task 9).
+            lock (config.SyncRoot)
+            {
+                config.LastCpu = cpu; config.LastRam = ram;
+                config.LastNetSpeed = net; config.LastCpuFreq = ghz;
                 config.LastGpu = gpu.Item1; config.LastGpuTemp = gpu.Item2; config.LastGpuFan = gpu.Item3;
-                config.LastPcTemp = pt;
+                config.LastPcTemp = temp;
+                config.MarkDirty();
+            }
 
-                if (config.EnableNasModule && !string.IsNullOrEmpty(config.TruenasIp)) {
-                    var nas = await GetTruenasData();
-                    if (nas.conn && !nasLastConn) {
-                        Log("NAS baglantisi saglandı, Arduino guncelleniyor.");
-                        await PushArduinoData();
-                    }
-                    nasLastConn = nas.conn;
-                     if (nas.conn) {
-                          config.LastNasCpu = nas.nc; config.LastNasTemp = nas.nt;
-                          config.LastNasRx = nas.nrx; config.LastNasTx = nas.ntx; 
-                          config.LastNasLoad = nas.nl; config.LastNasAlerts = nas.na;
-                          config.LastNasUptime = nas.up; config.LastNasMem = nas.mem;
-                          config.LastNasServicesJ = nas.svcs; config.LastNasAlertsJ = nas.alerts;
-                          config.LastPools = nas.pools; config.LastNasAppsJ = appsList;
-                     }
-                }
-                // config.Save(); // Telemetry verilerini her saniye diske yazmak performansı etkileyebilir, kaldırıldı.
+            if (mainForm != null && !mainForm.IsDisposed)
+                mainForm.UpdateStats(cpu, ram, gpu.Item1, gpu.Item2, gpu.Item3, ghz, net);
+        }
 
-                if (!mainForm.IsDisposed) mainForm.UpdateStats(wc, wr, gpu.Item1, gpu.Item2, gpu.Item3, cf, wn);
-            } catch (Exception ex) { Log("UpdateSystemInfo error: " + ex.Message); }
+        private async Task UpdateNasTelemetry()
+        {
+            var nas = await GetTruenasData();
+
+            if (nas.conn && !nasLastConn)
+            {
+                log.Info("NAS baglantisi saglandi, Arduino guncelleniyor.");
+                await PushArduinoData();
+            }
+            nasLastConn = nas.conn;
+            if (!nas.conn) return;
+
+            // A4: yazim ve serilestirme ayni kilidi paylasmak zorunda (Task 9).
+            lock (config.SyncRoot)
+            {
+                config.LastNasCpu = nas.nc; config.LastNasTemp = nas.nt;
+                config.LastNasRx = nas.nrx; config.LastNasTx = nas.ntx;
+                config.LastNasLoad = nas.nl; config.LastNasAlerts = nas.na;
+                config.LastNasUptime = nas.up; config.LastNasMem = nas.mem;
+                config.LastNasServicesJ = nas.svcs; config.LastNasAlertsJ = nas.alerts;
+                config.LastPools = nas.pools; config.LastNasAppsJ = appsList;
+                config.MarkDirty();
+            }
         }
 
         private void HandleArduinoEvent(string ev)
