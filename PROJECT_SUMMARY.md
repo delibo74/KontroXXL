@@ -1,6 +1,6 @@
 # KontroXXL Project Summary & TODO
 
-## 🚀 Current Architecture: "Thin Client v7.8"
+## 🚀 Current Architecture: "Thin Client" (v2.1.0)
 The project has been migrated to a high-performance **Thin Client** architecture to overcome Arduino memory limitations.
 
 - **Windows App (C# - .NET 8.0)**: Acts as the "Brain". It handles all data fetching (WMI, NVIDIA SMI, TrueNAS API), UI logic, menu navigation, and formatting.
@@ -31,14 +31,14 @@ The project has been migrated to a high-performance **Thin Client** architecture
 - [x] **Reliability**: 
     - [x] Mutex-based single instance control.
     - [x] Auto-reconnect serial system — `SerialLink`, 2 saniyelik izleyici döngüsüyle kablo çekilip takıldığında kendini toparlar (Faz 1, A2).
-    - [x] Cache-based startup (no empty screens) — artık gerçekten diske iniyor: atomik yazım + dirty-flag flush (Faz 1, A4).
+    - [x] Cache-based startup — artık gerçekten diske iniyor: atomik yazım + dirty-flag flush (Faz 1, A4). Bu yalnızca **LCD** için geçerli (`BuildViewData` önbelleği açılışta okur); **WinForms dashboard'u** önbelleği açılışta göstermiyor — donutlar ilk telemetri tick'ine kadar boş/0 kalıyor, çünkü önbelleği UI'ya basan `SyncNow()`'ı açılışta çağıran bir yol yok (bkz. `DOCS.md` §7).
     - [x] Rotary encoder detent tolerance (debounce).
     - [x] Log rotation — `app.log` 1 MB'ı geçince `app.1.log`/`.2`/`.3`'e döner, sınırsız büyümüyor (Faz 1, A3).
     - [x] Auto-Discovery — `SerialLink.DetectArduinoPort` WMI ile Arduino/CH340/CP210x cihazını arıyor; Ayarlar'da COM port alanı boş bırakılırsa devreye giriyor.
 
 ## 📝 TODO List
 - [ ] **Multiple Pools**: Support for selecting and viewing multiple storage pools.
-- [ ] **Config UI**: Add a setting in the Windows Dashboard to change update intervals (bugün yalnızca `config.json`'dan elle değiştiriliyor — `LcdIntervalMs`/`PcIntervalMs`/`NasIntervalMs`/`ConfigFlushIntervalMs`).
+- [ ] **Config UI**: Add a setting in the Windows Dashboard to change update intervals (bugün yalnızca `config.json`'dan elle değiştiriliyor — `LcdIntervalMs`/`PcIntervalMs`/`NasIntervalMs`/`ConfigFlushIntervalMs`. **Önce uygulamayı kapat** (tray → Çıkış): açıkken düzenlersen `flushTimer` değişikliği en geç `ConfigFlushIntervalMs` içinde üzerine yazar).
 - [ ] **Theming**: Dark/Light mode support for the Windows Dashboard.
 - [ ] **Resizable Dashboard (Faz 4 — Avalonia)**: `MainForm` penceresi hâlâ sabit boyutlu (`MinimumSize == MaximumSize`).
 

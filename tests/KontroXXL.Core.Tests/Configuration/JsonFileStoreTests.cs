@@ -52,4 +52,17 @@ public class JsonFileStoreTests : IDisposable
         File.WriteAllText(P("a.json"), "veri");
         Assert.Equal("veri", JsonFileStore.ReadOrNull(P("a.json")));
     }
+
+    [Fact]
+    public void ReadOrNull_returns_null_for_an_unreadable_existing_file()
+    {
+        string p = P("locked.json");
+        File.WriteAllText(p, "{}");
+        using var hold = new FileStream(p, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+        // Dosya VAR ama okunamiyor. Cagiran taraf bunu "dosya yok" ile
+        // karistirirsa kullanicinin ayarlarini varsayilanlarla ezer (C-1).
+        Assert.Null(JsonFileStore.ReadOrNull(p));
+        Assert.True(File.Exists(p), "test kurulumu: dosya var olmali");
+    }
 }

@@ -78,8 +78,6 @@ namespace KontroXXL_WinApp
             try
             {
                 config = AppConfig.Load();
-                
-                if (config.EnableArduinoModule) InitSerial();
 
                 var handler = new HttpClientHandler() {
                     // F19: SSL bypass scoped to TrueNAS IP only — not a blanket accept-all
@@ -99,6 +97,12 @@ namespace KontroXXL_WinApp
 
                 mainForm = new MainForm(config);
                 _ = mainForm.Handle;
+
+                // C-3 (M-3): InitSerial() seri okuma dongusunu hemen baslatir; Connected
+                // olayi RunOnUi/HandleArduinoEvent uzerinden mainForm'a UI thread'ine
+                // marshal edilir. Bu nedenle mainForm ve handle'i olusmadan cagrilmamali.
+                if (config.EnableArduinoModule) InitSerial();
+
                 WireFormEvents(mainForm);
 
                 // Build Menu FIRST
@@ -460,11 +464,14 @@ namespace KontroXXL_WinApp
 
             try
             {
+                // M-2: CurrentVolume() bir AudioSwitcher COM ozellik okumasi; VolumeActive
+                // degilse hic kimse VolumePercent'i kullanmiyor, o yuzden sadece gerektiginde oku.
+                bool volumeActive = now < volumeShowUntil;
                 var ctx = new LcdRenderContext(
                     Now: now,
                     ScrollOffset: scrollOffset,
-                    VolumeActive: now < volumeShowUntil,
-                    VolumePercent: CurrentVolume(),
+                    VolumeActive: volumeActive,
+                    VolumePercent: volumeActive ? CurrentVolume() : 0,
                     TickerText: string.IsNullOrEmpty(_lcdTickerText) ? null : _lcdTickerText,
                     TickerOffset: _tickerScrollIdx);
 

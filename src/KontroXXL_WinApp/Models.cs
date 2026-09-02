@@ -65,34 +65,66 @@ namespace KontroXXL_WinApp
 
         public void MarkDirty() => _dirty = true;
 
+        // C-1: yukleme basarisiz olduysa elimizdeki nesne kullanicinin gercek
+        // ayarlari DEGIL, bos bir varsayilan. Otomatik yazim onlari kalici siler.
+        [JsonIgnore] public bool LoadFailed { get; private set; }
+
         public static AppConfig Load(string path = null)
         {
             path ??= Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
+
+            bool existed = File.Exists(path);
             string raw = KontroXXL.Core.Configuration.JsonFileStore.ReadOrNull(path);
+
+            // Dosya var ama okunamadi -> basarisizlik. Dosya hic yok -> ilk calistirma, normal.
+            bool failed = existed && raw == null;
+
             AppConfig cfg = null;
             if (raw != null)
             {
-                try { cfg = JsonConvert.DeserializeObject<AppConfig>(raw); } catch { }
+                try { cfg = JsonConvert.DeserializeObject<AppConfig>(raw); } catch { failed = true; }
+                if (cfg == null) failed = true;   // bos ya da "null" iceren dosya
             }
+
             cfg ??= new AppConfig();
             cfg.SourcePath = path;
+            cfg.LoadFailed = failed;
             return cfg;
-        }
-
-        public void Save()
-        {
-            string json;
-            lock (SyncRoot)
-            {
-                json = JsonConvert.SerializeObject(this, Formatting.Indented);
-                _dirty = false;
-            }
-            KontroXXL.Core.Configuration.JsonFileStore.WriteAtomic(SourcePath, json);
         }
 
         public void FlushIfDirty()
         {
+            // C-1: bozuk yuklemeden sonra otomatik yazim kullanicinin dosyasini yok eder.
+            // Yalnizca kullanicinin bilincli "Kaydet"i uzerine yazabilir.
+            if (LoadFailed) return;
             if (_dirty) Save();
+        }
+
+        public void Save()
+        {
+            // C-1: okunamayan dosyanin uzerine yazmadan once kenara al — geri donulebilir olsun.
+            if (LoadFailed)
+            {
+                try
+                {
+                    if (File.Exists(SourcePath))
+                        File.Move(SourcePath,
+                                  SourcePath + ".corrupt-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"),
+                                  overwrite: false);
+                }
+                catch { }
+                LoadFailed = false;
+            }
+
+            string json;
+            lock (SyncRoot)
+            {
+                json = JsonConvert.SerializeObject(this, Formatting.Indented);
+            }
+            KontroXXL.Core.Configuration.JsonFileStore.WriteAtomic(SourcePath, json);
+
+            // M-1: _dirty ancak yazim BASARILI olduktan sonra temizlenmeli.
+            lock (SyncRoot) { _dirty = false; }
         }
     }
 

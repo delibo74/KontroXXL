@@ -198,7 +198,7 @@ namespace KontroXXL_WinApp
 
         // Stats
         private DonutProgress dntPcCpu, dntPcRam, dntPcGpu, dntPcGpuTemp, dntPcGpuFan, dntNasCpu, dntNasTemp;
-        private Label lblPcNet, lblCpuFreq, lblNasLoad, lblNasNet, lblNasUptime, lblNasMem;
+        private Label lblPcNet, lblCpuFreq, lblNasLoad, lblNasNet, lblNasMem;
         private LineChart chartPcNet, chartNasNet;
         private FlowLayoutPanel flowNasPools, flowNasAlerts, flowNasServices;
         private FlowLayoutPanel flowRealApps;

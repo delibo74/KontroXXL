@@ -1,6 +1,6 @@
 # KontroXXL — Developer Documentation
 
-> **Son Güncelleme:** 2026-09-02 | **Versiyon:** v3 (Faz 1: sağlamlaştırma) | **Platform:** Windows 10/11 · .NET 8.0 · Arduino ATmega328
+> **Son Güncelleme:** 2026-09-02 | **Versiyon:** 2.1.0 (Faz 1: sağlamlaştırma) | **Platform:** Windows 10/11 · .NET 8.0 · Arduino ATmega328
 
 ---
 
@@ -11,7 +11,7 @@
 │                  Windows PC (C# .NET 8.0)                │
 │                                                          │
 │  TrayApplicationContext.cs ◄──► MainForm.cs             │
-│  • Telemetri timer (1s)         • PC Dashboard          │
+│  • Dört bağımsız timer (§3.2)   • PC Dashboard          │
 │  • GPU / CPU / RAM              • NAS Dashboard         │
 │  • TrueNAS REST API             • NAS Apps              │
 │  • Serial port (Arduino)        • Quick Actions         │
@@ -166,7 +166,7 @@ ServerCertificateCustomValidationCallback = (msg, cert, chain, errors) => {
 | 2 | `NAS:55% 42C` | `↑3Mb ↓0Mb` |
 | 3 | `> NAS DASHBOARD` | `2 SYSTEM ALERTS!` |
 
-> Sağa yaslama: `PadLeft(16 - leftSide.Length)` — rakamlar değişmez, sadece boşluk eklenir.
+> Sağa yaslama: `LcdFormatter.SplitLine(left, right)` — `gap = 16 - left.Length - right.Length` hesaplanır ve aradaki boşluk `new string(' ', gap)` ile eklenir (`gap <= 0` ise iki parça olduğu gibi birleştirilir).
 
 ### 4.4 LCD Modları
 
@@ -184,7 +184,7 @@ enum LcdMode { Home, Menu, Apps, Pools, Shortcuts, NasPower }
 
 ### 4.5 Volüm Override
 
-Encoder çevrilir → `volumeShowUntil = now + 3s` → 3 sn boyunca ses bar grafiği → eski sayfaya dön.
+Encoder çevrilir → `volumeShowUntil = now + 2s` → 2 sn boyunca ses bar grafiği → eski sayfaya dön.
 
 ---
 
@@ -237,7 +237,7 @@ Faz 1'de (Task 1) `src/KontroXXL.Core/` adında yeni, `net8.0` (Windows'a bağı
 | `Serial/SerialLineBuffer.cs` | Ham bayt akışını `\n` sınırlarında satırlara böler, taşmada satırı düşürür — `SerialPort.ReadLine()`'ın bloklayan/istisna fırlatan davranışı yerine |
 | `Configuration/JsonFileStore.cs` | `WriteAtomic`/`ReadOrNull` — `.tmp`'ye yaz, `File.Replace` ile yerine taşı; yarım yazımda `config.json` bozulmaz (A4) |
 
-**Katman kuralı (spec §4.1):** `KontroXXL.Core`, `System.Windows.Forms`, `System.IO.Ports`, `System.Management`, `Microsoft.Win32.Registry`, `AudioSwitcher.*` veya `Avalonia`'ya referans veremez. Kural `tests/KontroXXL.Core.Tests/ArchitectureTests.cs`'teki `Core_does_not_reference_platform_assemblies` testiyle derleme sonrası zorlanır — Core Assembly'sinin referans listesi bu yasaklı listeyle kesiştirilir.
+**Katman kuralı (spec §4.1):** `KontroXXL.Core`, `System.Windows.Forms`, `System.IO.Ports`, `System.Management`, `Microsoft.Win32.Registry`, `AudioSwitcher.*` veya `Avalonia`'ya referans veremez. Kural `tests/KontroXXL.Core.Tests/ArchitectureTests.cs`'teki `Core_does_not_reference_platform_assemblies` testiyle derleme sonrası zorlanır — Core Assembly'sinin referans listesi bu yasaklı listeyle **önek eşleşmesiyle** karşılaştırılır (`AudioSwitcher.AudioApi` öneki `AudioSwitcher.AudioApi.CoreAudio`'yu, `Avalonia` öneki `Avalonia.Base`/`Avalonia.Controls`/`Avalonia.Desktop` gibi alt derlemeleri de yakalar). Bir yasaklı derleme, ancak Core kodu o derlemeden gerçekten bir tip kullandığında `GetReferencedAssemblies()` listesinde belirir — kullanılmayan bir `PackageReference` tek başına görünmez.
 
 `tests/KontroXXL.Core.Tests/` bu kütüphanenin xUnit test projesidir (150 test, donanım gerektirmez).
 
@@ -302,7 +302,7 @@ NoScrollPanel (AutoScroll=true) → scroll pozisyonu tracked, scrollbar yok
 | `TruenasApiKey` | `""` | Bearer token |
 | `EnableNasModule` | `true` | NAS polling |
 | `EnableArduinoModule` | `true` | Serial sync |
-| `Last*` alanlar | 0 | Startup cache — UI hemen dolu görünür |
+| `Last*` alanlar | 0 | Startup cache — yalnızca **LCD** için: `BuildViewData()` açılışta bu alanları doğrudan okur. **WinForms dashboard'u** bunu kullanmaz; `Last*`'ı UI'ya basan tek yol `SyncNow()`'dır ve onun tek çağıranı `Reload()`'dır — açılışta (bu dalda da, v2'de de) `Reload()`'ı çağıran hiçbir kod yok, dolayısıyla donutlar ilk `pcTimer`/`nasTimer` tick'ine kadar 0 gösterir |
 | `LastNasServicesJ` | JArray | Servis ID lookup için cache |
 | `_extra` | IDictionary | `[JsonExtensionData]` — eski alanları yok sayar |
 | `LcdIntervalMs` / `PcIntervalMs` / `NasIntervalMs` / `ConfigFlushIntervalMs` | 200 / 1000 / 5000 / 30000 | Dört timer'ın periyodu (Faz 1, A8) — bkz. §3.2 |
@@ -330,15 +330,29 @@ NoScrollPanel (AutoScroll=true) → scroll pozisyonu tracked, scrollbar yok
 
 ### Yeni LCD Sayfası
 
+Sayfalar artık `TrayApplicationContext.cs`'te değil, `KontroXXL.Core.Lcd.LcdFormatter.RenderHome`
+içindeki `s.Page switch` ifadesinde tanımlı (`lcdPage` alanı Faz 1'de kaldırıldı,
+sayfa numarası `LcdMenuState.Page`'de tutuluyor):
+
 ```csharp
-// TrayApplicationContext.cs → UpdateLCD() → LcdMode.Home case
-else if (lcdPage == N) {
-    string left = "SOL KISIM";
-    string right = "SAĞ";
-    l0 = left + right.PadLeft(16 - left.Length);
-    l1 = "İKİNCİ SATIR    ";
-}
+// LcdFormatter.cs → RenderHome() → s.Page switch
+(string l0, string l1) = s.Page switch
+{
+    0 => (...),
+    1 => (...),
+    2 => (...),
+    // Yeni sayfa: sıradaki numarayı ekle
+    4 => (SplitLine("SOL KISIM", "SAG"), "IKINCI SATIR"),
+    _ => ("> NAS DASHBOARD", ...),
+};
 ```
+
+`SplitLine(left, right)` sağa yaslamayı kendisi yapar (bkz. §4.3); üretilen
+her iki satır da `LcdText.Fit` içinden geçtiği için 16 karakter garantisi
+`RenderHome`'un dönüşünde otomatik sağlanır — elle `PadLeft` gerekmez.
+Yeni sayfa eklendiğinde `LcdMenuModel.HomePageCount` sabiti de artırılmalı —
+`Home` modunda `Back` girdisi `Page = (Page + 1) % HomePageCount` ile döngü
+yapıyor, sabit güncellenmezse yeni sayfaya asla sıra gelmez.
 
 ### Yeni TrueNAS Endpoint
 
@@ -362,7 +376,7 @@ var dntYeni = new DonutProgress() {
 };
 fDonuts.Controls.Add(dntYeni);
 
-// UpdatePcStats():
+// UpdateStats():
 dntYeni.Value = someValue; dntYeni.Invalidate();
 ```
 

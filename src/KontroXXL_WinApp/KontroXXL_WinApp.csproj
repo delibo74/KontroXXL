@@ -9,7 +9,7 @@
     <ApplicationIcon>icon.ico</ApplicationIcon>
     <Win32Resource>
     </Win32Resource>
-    <NoWarn>CS0169;NU1701;MSB3245;MSB3243</NoWarn>
+    <NoWarn>NU1701;MSB3245;MSB3243</NoWarn>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
   </PropertyGroup>
 

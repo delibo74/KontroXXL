@@ -31,11 +31,19 @@ Gereksinim: .NET SDK 8.0 (bu depo 8.0.301 ile derlendi/test edildi)
 
 Dört timer periyodu (`LcdIntervalMs`, `PcIntervalMs`, `NasIntervalMs`, `ConfigFlushIntervalMs`) de bu dosyadan ayarlanır — ayrıntı için `DOCS.md` §3.2.
 
+**Elle düzenlemeden önce uygulamayı kapat** (tray → Çıkış). Uygulama çalışırken
+`flushTimer` en geç `ConfigFlushIntervalMs` (varsayılan 30 sn) içinde
+`config.json`'ı kendi bellekteki haliyle üzerine yazar — dosyayı açıkken elle
+değiştirirsen değişiklik birkaç saniye içinde geri alınır. Kapat, düzenle,
+yeniden başlat.
+
 ## Katman kuralı
 
 `KontroXXL.Core` şu assembly'lere referans veremez: `System.Windows.Forms`,
 `System.IO.Ports`, `System.Management`, `Microsoft.Win32.Registry`,
-`AudioSwitcher.*`, `Avalonia`. Kural `ArchitectureTests` ile zorlanır.
+`AudioSwitcher.*`, `Avalonia`. Kural `ArchitectureTests` ile zorlanır — önek
+eşleşmesi kullanıldığı için `AudioSwitcher.AudioApi.CoreAudio` ve
+`Avalonia.Controls`/`Avalonia.Base` gibi alt derlemeler de yakalanır.
 
 ## Daha fazlası
 
