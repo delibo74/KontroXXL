@@ -1073,20 +1073,31 @@ namespace KontroXXL_WinApp
         }
 
         private void SaveConfig() {
-            config.TruenasIp     = txtNasIp.Text;
-            config.TruenasApiKey = txtNasKey.Text;
+            // Once sirri isle. Telemetri config'i surekli kirli tuttugu icin, buradan
+            // sonra yapilan HER atama 30 saniyelik flush timer'iyla diske iner —
+            // "hicbir sey yazilmadi" garantisi ancak atamalardan ONCE cikarsak dogru olur.
             if (Secrets != null)
             {
-                var result = config.ApplyProtection(Secrets);
-                if (result == SecretApplyResult.Failed)
+                string previousKey = config.TruenasApiKey;
+                config.TruenasApiKey = txtNasKey.Text;
+
+                if (config.ApplyProtection(Secrets) == SecretApplyResult.Failed)
                 {
+                    config.TruenasApiKey = previousKey;   // bellegi de geri al
                     MessageBox.Show(
                         "API anahtarı şifrelenemedi. Kayıtlı anahtar korundu, değişiklik uygulanmadı.\n" +
                         "Lütfen tekrar deneyin.",
                         "KontroXXL", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;   // hicbir seyi kaydetme
+                    return;
                 }
             }
+            else
+            {
+                config.TruenasApiKey = txtNasKey.Text;
+            }
+
+            // Buradan itibaren kalici degisiklikler.
+            config.TruenasIp     = txtNasIp.Text;
             config.ArduinoPort   = cmbComPort.Text;
             config.EnableNasModule       = chkEnableNas.Checked;
             config.EnableArduinoModule   = chkEnableArduino.Checked;

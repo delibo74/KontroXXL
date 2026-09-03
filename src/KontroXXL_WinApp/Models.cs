@@ -178,8 +178,11 @@ namespace KontroXXL_WinApp
             if (string.IsNullOrEmpty(cipher))
                 return SecretApplyResult.Failed;   // eski blob KORUNUR
 
-            lock (SyncRoot) { TruenasApiKeyProtected = cipher; }
-            SecretUnreadable = false;              // artik okunabilir bir anahtarimiz var
+            lock (SyncRoot)
+            {
+                TruenasApiKeyProtected = cipher;
+                SecretUnreadable = false;          // artik okunabilir bir anahtarimiz var
+            }
             return SecretApplyResult.Applied;
         }
 
