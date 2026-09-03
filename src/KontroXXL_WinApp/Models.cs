@@ -58,8 +58,7 @@ namespace KontroXXL_WinApp
 
         // A8/A4: telemetri her saniye diske yazılmaz; kirli işaretlenir, flush timer'ı indirir.
         [JsonIgnore] private bool _dirty;
-        [JsonIgnore] public string SourcePath { get; private set; } =
-            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
+        [JsonIgnore] public string SourcePath { get; private set; } = "";
 
         // Task 10 arka plan thread'inden Last* alanlarini yazacak, UI timer'i ise
         // FlushIfDirty() cagiracak. Serilestirme tum nesne grafigini gezdigi icin
@@ -72,10 +71,8 @@ namespace KontroXXL_WinApp
         // ayarlari DEGIL, bos bir varsayilan. Otomatik yazim onlari kalici siler.
         [JsonIgnore] public bool LoadFailed { get; private set; }
 
-        public static AppConfig Load(string path = null)
+        public static AppConfig Load(string path)
         {
-            path ??= Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
-
             bool existed = File.Exists(path);
             string raw = KontroXXL.Core.Configuration.JsonFileStore.ReadOrNull(path);
 

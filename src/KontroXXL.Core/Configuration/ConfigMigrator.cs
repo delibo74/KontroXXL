@@ -13,18 +13,23 @@ public static class ConfigMigrator
         if (File.Exists(targetFile)) return false;
         if (!File.Exists(legacyFile)) return false;
 
+        string dir = Path.GetDirectoryName(Path.GetFullPath(targetFile)) ?? ".";
+        string tmp = targetFile + ".migrating";
+
         try
         {
-            string dir = Path.GetDirectoryName(Path.GetFullPath(targetFile)) ?? ".";
             Directory.CreateDirectory(dir);
 
-            // Kopyala, TASIMA — eski dosya geri donus yolu olarak kalir.
-            File.Copy(legacyFile, targetFile, overwrite: false);
+            // Yarim kopya birakmamak icin once .tmp'ye, sonra tek adimda yerine.
+            // JsonFileStore.WriteAtomic ile ayni konvansiyon.
+            File.Copy(legacyFile, tmp, overwrite: true);
+            File.Move(tmp, targetFile, overwrite: false);
             return true;
         }
         catch
         {
             // Goc edilemezse uygulama varsayilanlarla acilir; cokmez.
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
             return false;
         }
     }

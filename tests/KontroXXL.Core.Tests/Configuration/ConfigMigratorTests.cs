@@ -77,4 +77,15 @@ public class ConfigMigratorTests : IDisposable
         Assert.False(ConfigMigrator.MigrateIfNeeded(Legacy, Target));
         Assert.False(File.Exists(Target));
     }
+
+    [Fact]
+    public void Leaves_no_temporary_file_behind_after_migrating()
+    {
+        WriteLegacy("{}");
+        Assert.True(ConfigMigrator.MigrateIfNeeded(Legacy, Target));
+
+        string dir = Path.GetDirectoryName(Target)!;
+        Assert.Empty(Directory.GetFiles(dir, "*.migrating"));
+        Assert.Single(Directory.GetFiles(dir));   // yalnizca config.json
+    }
 }
