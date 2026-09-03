@@ -83,7 +83,7 @@ Release derlemesi **0 uyarı / 0 hata**, testler **186/186** (179 + 7 yeni).
   mutex hâlâ `Run()` sonrası alınıyor.
 - **L2 — `TrayApplicationContext.cs`.** `if (updateCheckRunning) return;` sessizdi; kısa bir
   "Güncelleme denetimi zaten sürüyor." mesajı eklendi (spec §9).
-- **L3/L4 — **YENİ** `installer/common.ps1`.** `.Project.PropertyGroup.Version` tek
+- **L3/L4 — yeni `installer/common.ps1`.** `.Project.PropertyGroup.Version` tek
   PropertyGroup varsayıyordu (ikincisi eklenince `Set-StrictMode -Version Latest` altında
   fırlıyor) → `SelectSingleNode` + `^\d+\.\d+\.\d+` biçim kapısı. Damga kapısı
   `StartsWith` idi ("2.2.0" öneki "2.2.01"i geçirirdi) → iki taraf da dört parçaya
