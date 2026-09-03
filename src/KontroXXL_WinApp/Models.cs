@@ -19,7 +19,17 @@ namespace KontroXXL_WinApp
 
         // A9: v2'de "COM4" degeri sihirli sekilde "otomatik algila" demekti.
         // Gercekten COM4'teki cihazi olan kullanici surekli eziliyordu.
-        public bool AutoDetectPort { get; set; } = true;
+        // Diske yazilan hali. null = Faz 2 oncesi dosya, deger hic belirtilmemis.
+        [JsonProperty("AutoDetectPort")]
+        public bool? AutoDetectPortRaw { get; set; }
+
+        /// <summary>Tuketiciler icin non-null gorunum. Varsayilan: otomatik algila.</summary>
+        [JsonIgnore]
+        public bool AutoDetectPort
+        {
+            get => AutoDetectPortRaw ?? true;
+            set => AutoDetectPortRaw = value;
+        }
 
         public int ArduinoBaud { get; set; } = 115200;
         public string TruenasIp { get; set; } = "";
@@ -81,7 +91,7 @@ namespace KontroXXL_WinApp
         // (JArray uyeleri dahil) yazim ve serilestirme ayni kilidi paylasmak zorunda.
         [JsonIgnore] public object SyncRoot { get; } = new object();
 
-        public void MarkDirty() => _dirty = true;
+        public void MarkDirty() { lock (SyncRoot) { _dirty = true; } }
 
         // C-1: yukleme basarisiz olduysa elimizdeki nesne kullanicinin gercek
         // ayarlari DEGIL, bos bir varsayilan. Otomatik yazim onlari kalici siler.
@@ -105,6 +115,17 @@ namespace KontroXXL_WinApp
             cfg ??= new AppConfig();
             cfg.SourcePath = path;
             cfg.LoadFailed = failed;
+
+            // A9 gocu (tek seferlik): anahtar yoksa bu Faz 2 oncesi bir dosya.
+            // v2'nin kuralini birebir uygula — port bos ya da "COM4" ise o zaman da
+            // otomatik algilaniyordu; baska bir deger ise kullanicinin acik secimiydi
+            // ve ona DOKUNMAYIZ. Bu, "COM4" literalinin kodda kalan tek mesru kullanimi:
+            // eski dosyalari okumak icin, yeni karar vermek icin degil.
+            // Sadece basarili yuklemede calisir — LoadFailed durumunda korunacak bir
+            // kullanici niyeti yok, duz varsayilan (true) kalir.
+            if (!failed && cfg.AutoDetectPortRaw == null)
+                cfg.AutoDetectPort = string.IsNullOrEmpty(cfg.ArduinoPort) || cfg.ArduinoPort == "COM4";
+
             return cfg;
         }
 
