@@ -9,6 +9,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Microsoft.Win32;
 using System.Runtime.InteropServices;
+using KontroXXL.Core.Diagnostics;
 
 namespace KontroXXL_WinApp
 {
@@ -780,6 +781,17 @@ namespace KontroXXL_WinApp
             RefreshShortcuts();
         }
 
+        /// <summary>
+        /// Ayarlar'daki "Hakkında" satirinda gosterilen surum. Assembly damgasindan
+        /// okunur (bkz. <see cref="VersionText"/>); bir kere hesaplanir, cunku bir
+        /// process omru boyunca degismez.
+        /// </summary>
+        internal static string AppVersionText { get; } = VersionText.Describe(
+            System.Reflection.CustomAttributeExtensions
+                .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(typeof(Program).Assembly)?
+                .InformationalVersion,
+            typeof(Program).Assembly.GetName().Version);
+
         private void SetupSettingsTab() {
             Panel p = new NoScrollPanel() { Dock = DockStyle.Fill, Visible = false, AutoScroll = true, BackColor = Color.FromArgb(10, 10, 15) };
             ApplyCustomScroll(p, "Settings");
@@ -848,6 +860,19 @@ namespace KontroXXL_WinApp
             };
             bS.Click += (s, e) => SaveConfig();
             p.Controls.Add(bS);
+            y += 58;
+
+            // Spec 8.9: surum TEK kaynaktan gelir. Burada elle yazilmis bir sabit yok —
+            // assembly damgasi okunur, o da Directory.Build.props'taki <Version>'dir;
+            // kurulum paketi de ayni degerle damgalanir.
+            p.Controls.Add(new Label() { Text = "— Hakkında —", Font = new Font("Segoe UI Semibold", 9), ForeColor = Color.FromArgb(100, 140, 200), Location = new Point(0, y), AutoSize = true }); y += 28;
+            p.Controls.Add(new Label() {
+                Text = "KontroXXL sürüm " + AppVersionText,
+                Location = new Point(0, y),
+                AutoSize = true,
+                ForeColor = Color.Silver,
+                Font = new Font("Consolas", 10)
+            }); y += 32;
 
             contentContainer.Controls.Add(p);
             tabPanels["Settings"] = p;

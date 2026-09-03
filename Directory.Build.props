@@ -1,7 +1,15 @@
 <Project>
   <PropertyGroup>
     <LangVersion>12.0</LangVersion>
-    <Version>2.1.0</Version>
+    <!-- Spec §8.9: surumun TEK kaynagi burasi. Kurulum paketi (installer/pack.ps1)
+         ve Ayarlar'daki "Hakkinda" satiri bu degeri okur; elle baska bir yere
+         surum yazma. Not: buraya bir on-surum eki (-beta) eklenirse
+         AssemblyVersion/FileVersion derlenmez — o durumda asagidaki iki satiri
+         VersionPrefix'e baglamak gerekir. -->
+    <Version>2.2.0</Version>
+    <AssemblyVersion>$(Version)</AssemblyVersion>
+    <FileVersion>$(Version)</FileVersion>
+    <InformationalVersion>$(Version)</InformationalVersion>
     <Company>KontroXXL</Company>
     <Product>KontroXXL</Product>
     <InvariantGlobalization>false</InvariantGlobalization>
