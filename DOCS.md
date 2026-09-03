@@ -1,6 +1,6 @@
 # KontroXXL — Developer Documentation
 
-> **Son Güncelleme:** 2026-09-02 | **Versiyon:** 2.1.0 (Faz 1: sağlamlaştırma) | **Platform:** Windows 10/11 · .NET 8.0 · Arduino ATmega328
+> **Son Güncelleme:** 2026-09-03 | **Versiyon:** 2.2.0 (Faz 2: kurulum ve güvenlik) | **Platform:** Windows 10/11 · .NET 8.0 · Arduino ATmega328
 
 ---
 
@@ -43,16 +43,20 @@ nas-lcd/
 │   │   ├── MainForm.cs                ← UI
 │   │   ├── Models.cs                  ← AppConfig, ShortcutItem
 │   │   ├── SerialLink.cs              ← Arduino seri bağlantısı, yeniden bağlanma (A2)
-│   │   ├── Program.cs                 ← Entry point + mutex
+│   │   ├── Program.cs                 ← Entry point: VelopackApp.Run() → mutex (bu sıra kritik, §12)
+│   │   ├── DpapiSecretProtector.cs    ← API anahtarını DPAPI ile şifreler (Faz 2 / A5)
 │   │   └── KontroXXL_WinApp.csproj
 │   └── KontroXXL.Core/                ← Platform-bağımsız saf mantık (Task 1), bkz. §5.3
-│       ├── Lcd/, Logging/, Serial/, Configuration/
+│       ├── Lcd/, Logging/, Serial/, Configuration/, Security/, Diagnostics/
 │       └── KontroXXL.Core.csproj
 ├── tests/
-│   └── KontroXXL.Core.Tests/          ← xUnit, 150 test, donanım gerektirmez
+│   └── KontroXXL.Core.Tests/          ← xUnit, 179 test, donanım gerektirmez
 ├── firmware/
 │   ├── arduino_kontrol/arduino_kontrol.ino
 │   └── eski-versiyon.ino.txt          ← v2 öncesi referans
+├── installer/
+│   ├── publish.ps1                    ← framework-bağımlı win-x64 yayın + sürüm kapısı
+│   └── pack.ps1                       ← Velopack kurulum paketi (releases/)
 ├── tools/
 │   └── IconGen.cs/.csproj             ← Tek seferlik ikon aracı
 ├── docs/superpowers/                  ← Şartname ve faz planları
@@ -60,7 +64,7 @@ nas-lcd/
 └── OPTIMIZATIONS.md                   ← 26/26 bulgu tamamlandı
 ```
 
-`config.json` ve `app.log` derleme çıktısının (`bin/.../`) yanında runtime'da oluşur — `Release_v2/` artık depoda değil, `.gitignore`'da.
+`config.json`, `app.log` ve `crash.log` **`%APPDATA%\KontroXXL\`** altında oluşur (Faz 2 / A6, `KontroXXL.Core.Configuration.AppPaths`); derleme çıktısının yanında hiçbir şey yazılmaz. Exe'nin yanındaki eski bir `config.json` ilk açılışta bir kez göç ettirilir (hedef yoksa kopyalanır, üzerine asla yazılmaz). `publish/` ve `releases/` kaynaktan üretilir, ikisi de `.gitignore`'da.
 
 ---
 
@@ -402,7 +406,8 @@ else if (strncmp(cmd, "XX=", 3) == 0) {
 | AudioSwitcher | .NET 4.x paketi (NU1701 suppressed), çalışıyor |
 | Single instance | Mutex ile — process kill sonrası Task Manager'dan temizle |
 | Dashboard boyutu | Sabit `1000×680`, yeniden boyutlandırılamaz (`MainForm.cs`) — Faz 4 (Avalonia) konusu |
-| Config konumu | `config.json` hâlâ exe'nin yanında, düz metin API anahtarıyla — Faz 2'de `%APPDATA%` + DPAPI'ye taşınacak |
+| DPAPI anahtarı | Kullanıcı profiline bağlı — profil/makine değişince çözülemez; Ayarlar'da uyarı çıkar, anahtar yeniden girilir |
+| Kurulum paketi | İmzasız — SmartScreen uyarısı beklenen davranış (spec §9) |
 
 ---
 
@@ -416,3 +421,54 @@ else if (strncmp(cmd, "XX=", 3) == 0) {
 | Uygulama açılmıyor | Mutex sıkışması | Task Manager → exe öldür |
 | COM port bağlanmıyor | Başka uygulama tutuyor | Arduino IDE / PuTTY kapat |
 | Arduino kabloyu çektim, geri takınca LCD gelmiyor | *(beklenmez — `SerialLink` 2 sn'de bir yeniden dener, A2)* | Yine de olursa uygulamayı yeniden başlat, `app.log`'da `Seri baglanti koptu` satırını ara |
+
+---
+
+## 12. Kurulum ve Güncelleme (Faz 2)
+
+### 12.1 Yayın ve paketleme
+
+| Betik | Ne yapar |
+|---|---|
+| `installer/publish.ps1` | `dotnet publish -c Release -r win-x64 --self-contained false` → `publish/`. Sonunda exe'nin `FileVersion` damgasını `Directory.Build.props` ile karşılaştırır, uyuşmazsa **hata verir**. |
+| `installer/pack.ps1` | Önce `publish.ps1`, sonra `vpk pack` → `releases/KontroXXL-win-Setup.exe`, `-Portable.zip`, `-full.nupkg`. `vpk` yoksa net hata verir (`dotnet tool install -g vpk`). |
+
+`--framework net8.0-x64-desktop` bilerek verilir: yayın framework-bağımlıdır, temiz bir
+makinede .NET 8 Desktop runtime yoksa Velopack bootstrapper'ı önce onu kurar. Bayrak
+olmadan kurulum, açılmayan bir uygulama bırakırdı.
+
+Paket **imzasızdır**; SmartScreen uyarısı beklenir.
+
+### 12.2 Sürümün tek kaynağı (spec §8.9)
+
+`Directory.Build.props` → `<Version>`. `AssemblyVersion`/`FileVersion`/`InformationalVersion`
+buna bağlıdır; `pack.ps1` paketi bu değerle damgalar; Ayarlar → "Hakkında" satırı da aynı
+damgayı okur (`KontroXXL.Core.Diagnostics.VersionText`). Başka hiçbir yere sürüm yazılmaz.
+
+`VersionText` neden var: `Assembly.GetName().Version` her zaman dört parçaya normalize eder
+("2.2.0" → "2.2.0.0") ve ön-sürüm ekini düşürür, yani paket damgasıyla asla birebir aynı
+olmaz. `VersionText` bunun yerine `InformationalVersion`'ı okur, SourceLink'in eklediği
+`+commit` üstverisini atar, `-beta` ekini korur.
+
+### 12.3 Velopack çağrı sırası (spec §9 riski)
+
+`VelopackApp.Build().Run()` **`Main`'in ilk işidir**. Bu yüzden mutex artık statik alan
+başlatıcısında kurulmuyor: statik alan başlatıcıları `Main` gövdesinden önce koşar, dolayısıyla
+eski hâlde Velopack gerçekte ilk değildi. Hook hatası yutulmaz — `crash.log`'a yazılır ve
+yeniden fırlatılır; yarım kalmış bir kurulumun üzerine normal açılış daha kötüdür.
+`vpk pack` bunu her pakette doğrular: *"Verified VelopackApp.Run() in ... Program::Main()"*.
+
+### 12.4 Güncelleme denetimi
+
+Tray → **Güncellemeleri Denetle** (`TrayApplicationContext.CheckUpdatesAsync`). Sırasıyla:
+`UpdateFeedUrl` boşsa "kaynak yapılandırılmamış" der (bugünkü durum — Task 7'de doldurulacak);
+kurulum paketiyle kurulmamış bir kopyada (`mgr.IsInstalled == false`) uyarır, çünkü
+`ApplyUpdatesAndRestart` orada fırlatır; `updateCheckRunning` bayrağı ikinci bir indirmeyi
+engeller. Yeniden başlatmadan **önce** çıkış yolunun işleri yapılır: `FlushIfDirty()`,
+`SendGoodbye()`, `serial.Dispose()` — COM portu bırakılmazsa yeni process porta bağlanamaz.
+Hata sessiz kalmaz, kullanıcıya gösterilir.
+
+### 12.5 Kaldırma
+
+Uygulama ve kısayollar silinir; **`%APPDATA%\KontroXXL\` kalır** — kullanıcı verisi kasten
+silinmez (spec §8.8).

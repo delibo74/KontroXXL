@@ -8,8 +8,9 @@ Windows PC + TrueNAS telemetrisini 16×2 I²C LCD'ye basan tray uygulaması.
 |---|---|
 | `src/KontroXXL.Core` | Platform-bağımsız saf mantık — LCD biçimlendirme, menü durum makinesi, log, config. **Windows API'si içermez.** |
 | `src/KontroXXL_WinApp` | WinForms arayüzü + tray + donanım erişimi (Faz 4'te Avalonia ile değişecek) |
-| `tests/KontroXXL.Core.Tests` | xUnit, 150 test, donanım gerektirmez |
+| `tests/KontroXXL.Core.Tests` | xUnit, 179 test, donanım gerektirmez |
 | `firmware/arduino_kontrol` | ATmega328 firmware'i (`.ino`) |
+| `installer/` | `publish.ps1` (yayın profili) + `pack.ps1` (Velopack kurulum paketi) |
 | `docs/superpowers/` | Şartname ve faz planları |
 
 ## Derleme
@@ -24,10 +25,33 @@ Gereksinim: .NET SDK 8.0 (bu depo 8.0.301 ile derlendi/test edildi)
 
 `dotnet run` yalnızca bir örnek çalışır — uygulama mutex tabanlı single-instance korumalı; ikinci bir örnek hemen çıkar.
 
+## Kurulum
+
+`installer/pack.ps1` çalıştırıldığında `releases/KontroXXL-win-Setup.exe` üretilir
+(Velopack). Kurulum exe'si çift tıklanır; Başlat menüsüne ve masaüstüne kısayol koyar,
+uygulamayı `%LOCALAPPDATA%\KontroXXL` altına kurar.
+
+- **SmartScreen uyarısı beklenir:** paket imzasız. "Daha fazla bilgi" → "Yine de çalıştır".
+- Yayın framework-bağımlıdır; temiz bir makinede .NET 8 Desktop runtime yoksa
+  kurulum bootstrapper'ı önce onu kurar (`--framework net8.0-x64-desktop`).
+- **Kaldırma** uygulamayı ve kısayolları siler, `%APPDATA%\KontroXXL\` **kalır** —
+  ayarların ve API anahtarın kasten silinmez.
+- Güncelleme: tray → **Güncellemeleri Denetle**. Güncelleme kaynağı (`UpdateFeedUrl`)
+  henüz yapılandırılmadığı için bugün yalnızca bunu söyleyen bir mesaj gösterir.
+
+Sürüm numarasının tek kaynağı `Directory.Build.props` içindeki `<Version>`;
+kurulum paketi ve Ayarlar → "Hakkında" satırı aynı değeri gösterir.
+
 ## Yapılandırma
 
-`config.json` şu an exe'nin yanında oluşur (Faz 2'de `%APPDATA%\KontroXXL\` altına taşınıyor).
-**API anahtarı düz metin tutuluyor — dosya `.gitignore`'da, asla commit etme.**
+`config.json` **`%APPDATA%\KontroXXL\config.json`** altında tutulur (Faz 2 / A6); log ve
+crash dosyaları da oradadır. Exe'nin yanında eski bir `config.json` varsa ilk açılışta
+bir kez göç ettirilir — hedef yoksa kopyalanır, üzerine asla yazılmaz.
+
+**API anahtarı DPAPI ile şifreli** saklanır (`TruenasApiKeyProtected`, kullanıcı profiline
+bağlı). Düz metin alan artık yazılmaz. Anahtar çözülemezse (profil/makine değişimi)
+Ayarlar sekmesinde kırmızı uyarı çıkar ve yeniden girilmesi istenir — sessizce boş geçilmez.
+Yine de `config.json`'ı **commit etme**, `.gitignore`'da.
 
 Dört timer periyodu (`LcdIntervalMs`, `PcIntervalMs`, `NasIntervalMs`, `ConfigFlushIntervalMs`) de bu dosyadan ayarlanır — ayrıntı için `DOCS.md` §3.2.
 
