@@ -59,9 +59,45 @@ derlemesi 0 uyarı / 0 hata (spec §8.1).
   KURULUMLA DEĞİL (öyle işaretlendi, "geçti" denmedi), 3'ü borçlu/blokajlı. Sahte onay yok.
 - Plan dosyasındaki kutucuklar: Task 1–5 ve 8 işaretlendi; Task 6–7 açık bırakıldı.
 
+## Review turu 1 — Oscar'ın Task 4/5/8 bulguları kapatıldı (M1, M2, L1–L4)
+Üç commit: `81945fc` (M1+L2), `df25e9a` (M2+L3+L4), `00f609f` (L1).
+Release derlemesi **0 uyarı / 0 hata**, testler **186/186** (179 + 7 yeni).
+
+- **M1 — `TrayApplicationContext.cs` (CheckUpdatesAsync).** Yıkım
+  (`FlushIfDirty` → `SendGoodbye` → `serial.Dispose` → `trayIcon.Visible=false`)
+  `ApplyUpdatesAndRestart`'tan önce yapılıyor; o çağrı fırlarsa eski `catch` yalnızca
+  uyarı gösterip çıkıyor, süreç **yaşamaya devam** ediyordu: tepsi gizli, seri port
+  kapalı, LCD'de "BYE BYE", timer'lar tikliyor, kullanıcı menüye ulaşamıyor.
+  Artık `updateTornDown` bayrağı yıkımdan hemen önce set ediliyor; yıkım sonrası hatada
+  tepsi ikonu geri gösteriliyor, "kapatılıyor" deniyor ve `Application.Exit()` çağrılıyor.
+  Karar mantığı WinForms'tan ayrıldı: **YENİ** `KontroXXL.Core/Diagnostics/UpdateFailurePolicy.cs`
+  + 7 test (yıkım öncesi/sonrası, boş hata metni, başlıkların ayırt edilebilirliği).
+- **M2 — `installer/pack.ps1`.** `dotnet tool install -g vpk` sürüm sabitlemiyordu; temiz
+  makinede csproj'daki Velopack 1.2.0 ile uyuşmayan bir vpk inebilir. Sürüm artık csproj
+  `PackageReference`'tan okunuyor, hata mesajı `--version 1.2.0` ile veriliyor ve **kurulu
+  vpk sürümü kütüphaneyle karşılaştırılıyor** (`publish.ps1` damga kapısının eşdeğeri,
+  publish çalışmadan önce).
+- **L1 — `Program.cs`.** `UnhandledException` + `ThreadException` abonelikleri Velopack
+  hook'unun **üstüne** taşındı; hook fırlarsa artık ham .NET çökme diyaloğu değil uygulamanın
+  kendi kutusu çıkıyor. Sıra bozulmuyor: olaya abone olmak statik başlatıcı tetiklemez,
+  mutex hâlâ `Run()` sonrası alınıyor.
+- **L2 — `TrayApplicationContext.cs`.** `if (updateCheckRunning) return;` sessizdi; kısa bir
+  "Güncelleme denetimi zaten sürüyor." mesajı eklendi (spec §9).
+- **L3/L4 — **YENİ** `installer/common.ps1`.** `.Project.PropertyGroup.Version` tek
+  PropertyGroup varsayıyordu (ikincisi eklenince `Set-StrictMode -Version Latest` altında
+  fırlıyor) → `SelectSingleNode` + `^\d+\.\d+\.\d+` biçim kapısı. Damga kapısı
+  `StartsWith` idi ("2.2.0" öneki "2.2.01"i geçirirdi) → iki taraf da dört parçaya
+  normalize edilip eşitlik aranıyor. Ortak okuma tek dosyada toplandı.
+
+**Doğrulama:** üç `.ps1` PowerShell ayrıştırıcısından temiz geçti; yardımcılar canlı
+çalıştırıldı (props → 2.2.0, Velopack → 1.2.0, `2.2.0 == 2.2.0.0`, `2.2.0 != 2.2.01`,
+geçersiz metin → `$null`); iki PropertyGroup'lu bir dosyada yeni okuma 3.1.4 verirken eski
+yol StrictMode altında fırlattı. `vpk pack` bu turda YENİDEN ÇALIŞTIRILMADI (kurulu vpk
+sürümü zaten 1.2.0; paket üretimi Task 5'te doğrulanmıştı).
+
 ## Durum özeti
 Faz 2'de **6/8 task tamam** (1,2,3,4,5,8). Kalan 6 ve 7 blokajlı (aşağıda).
-Release derlemesi 0 uyarı/0 hata, testler 179/179.
+Release derlemesi 0 uyarı/0 hata, testler 186/186.
 `installer/pack.ps1` → `releases/KontroXXL-win-Setup.exe` (2.2.0) üretiliyor, imzasız.
 
 ## Sıradaki adım
