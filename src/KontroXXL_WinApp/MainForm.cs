@@ -190,6 +190,10 @@ namespace KontroXXL_WinApp
     public partial class MainForm : Form
     {
         private AppConfig config;
+
+        // Faz 2 (A5): Ayarlar kaydedilirken duz metin anahtari sifreli alana yansitmak icin.
+        public KontroXXL.Core.Security.ISecretProtector Secrets { get; set; }
+
         private Panel topBar, sideNav, contentContainer;
         private Dictionary<string, Panel> tabPanels = new Dictionary<string, Panel>();
         private Dictionary<string, Button> tabButtons = new Dictionary<string, Button>();
@@ -204,6 +208,7 @@ namespace KontroXXL_WinApp
         private FlowLayoutPanel flowRealApps;
 
         private TextBox txtNasIp, txtNasKey;
+        private Label lblSecretWarning;
         private ComboBox cmbComPort;
         private CheckBox chkEnableNas, chkEnableArduino, chkEnableShortcuts, chkStartWithWindows;
         private ListBox lstShortcuts;
@@ -790,7 +795,18 @@ namespace KontroXXL_WinApp
 
             p.Controls.Add(new Label() { Text = "API Token:", Location = new Point(0, y), AutoSize = true, ForeColor = Color.Silver }); y += 22;
             txtNasKey = new TextBox() { Location = new Point(0, y), Width = 420, PasswordChar = '●', BackColor = BgCard, ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle, Font = new Font("Consolas", 10) };
-            p.Controls.Add(txtNasKey); y += 48;
+            p.Controls.Add(txtNasKey); y += 24;
+
+            // A5: sifreli anahtar cozulemediyse kullaniciyi bilgilendir — sessiz bos alan yaniltici olur.
+            lblSecretWarning = new Label() {
+                Text = "⚠ Kayıtlı anahtar çözülemedi, lütfen yeniden girin.",
+                Location = new Point(0, y),
+                AutoSize = true,
+                ForeColor = Color.Tomato,
+                Font = new Font("Segoe UI Semibold", 8),
+                Visible = false
+            };
+            p.Controls.Add(lblSecretWarning); y += 24;
 
             // Arduino section
             p.Controls.Add(new Label() { Text = "— Arduino Bağlantısı —", Font = new Font("Segoe UI Semibold", 9), ForeColor = Color.FromArgb(100, 140, 200), Location = new Point(0, y), AutoSize = true }); y += 28;
@@ -1048,6 +1064,7 @@ namespace KontroXXL_WinApp
         private void LoadConfigToUI() {
             txtNasIp.Text   = config.TruenasIp;
             txtNasKey.Text  = config.TruenasApiKey;
+            lblSecretWarning.Visible = config.SecretUnreadable;
             cmbComPort.Text = config.ArduinoPort;
             chkEnableNas.Checked       = config.EnableNasModule;
             chkEnableArduino.Checked   = config.EnableArduinoModule;
@@ -1058,6 +1075,9 @@ namespace KontroXXL_WinApp
         private void SaveConfig() {
             config.TruenasIp     = txtNasIp.Text;
             config.TruenasApiKey = txtNasKey.Text;
+            if (Secrets != null) config.ApplyProtection(Secrets);
+            // Kullanici az once anahtari (yeniden) girip kaydetti — uyari artik gecerli degil.
+            lblSecretWarning.Visible = false;
             config.ArduinoPort   = cmbComPort.Text;
             config.EnableNasModule       = chkEnableNas.Checked;
             config.EnableArduinoModule   = chkEnableArduino.Checked;

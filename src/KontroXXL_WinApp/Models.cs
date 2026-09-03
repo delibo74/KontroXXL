@@ -14,8 +14,15 @@ namespace KontroXXL_WinApp
         public string ArduinoPort { get; set; } = "COM4";
         public int ArduinoBaud { get; set; } = 115200;
         public string TruenasIp { get; set; } = "";
-        public string TruenasApiKey { get; set; } = "";
-        
+
+        // A5: diske SIFRELI yazilir. Duz metin yalnizca bellekte tutulur.
+        public string TruenasApiKeyProtected { get; set; } = "";
+
+        [JsonIgnore] public string TruenasApiKey { get; set; } = "";
+
+        /// <summary>Cozulemeyen bir anahtar vardi — kullaniciya bildirilmeli.</summary>
+        [JsonIgnore] public bool SecretUnreadable { get; private set; }
+
         public bool EnableNasModule { get; set; } = true;
         public bool EnableArduinoModule { get; set; } = true;
         public bool EnableShortcutsModule { get; set; } = true;
@@ -99,6 +106,39 @@ namespace KontroXXL_WinApp
             if (LoadFailed) return;
             if (_dirty) Save();
         }
+
+        /// <summary>Yuklemeden sonra: sifreliyi coz, eski duz metni goc ettir.</summary>
+        public bool UnprotectSecrets(KontroXXL.Core.Security.ISecretProtector protector)
+        {
+            bool changed = false;
+            SecretUnreadable = false;
+
+            // Faz 1 oncesi dosyalarda anahtar duz metin "TruenasApiKey" alanindaydi;
+            // artik [JsonIgnore] oldugu icin _extra'ya dusuyor. Oradan al ve sifrele.
+            if (_extra != null && _extra.TryGetValue("TruenasApiKey", out var legacy))
+            {
+                string plain = legacy?.ToString() ?? "";
+                _extra.Remove("TruenasApiKey");
+                if (!string.IsNullOrEmpty(plain))
+                {
+                    TruenasApiKey = plain;
+                    TruenasApiKeyProtected = protector.Protect(plain);
+                    changed = true;
+                }
+            }
+            else if (!string.IsNullOrEmpty(TruenasApiKeyProtected))
+            {
+                string plain = protector.Unprotect(TruenasApiKeyProtected);
+                if (plain == null) { SecretUnreadable = true; TruenasApiKey = ""; }
+                else TruenasApiKey = plain;
+            }
+
+            return changed;
+        }
+
+        /// <summary>Kaydetmeden once: bellekteki duz metni sifreli alana yansit.</summary>
+        public void ApplyProtection(KontroXXL.Core.Security.ISecretProtector protector)
+            => TruenasApiKeyProtected = protector.Protect(TruenasApiKey);
 
         public void Save()
         {

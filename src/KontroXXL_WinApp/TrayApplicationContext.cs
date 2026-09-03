@@ -27,6 +27,7 @@ namespace KontroXXL_WinApp
         private MainForm mainForm;
         private AppConfig config;
         private AppPaths paths;
+        private KontroXXL.Core.Security.ISecretProtector secrets;
         private SerialLink serial;
         private HttpClient httpClient;
         private CoreAudioController audioController;
@@ -96,6 +97,10 @@ namespace KontroXXL_WinApp
                     }
                 }
 
+                secrets = new DpapiSecretProtector();
+                if (config.UnprotectSecrets(secrets)) { config.MarkDirty(); log.Info("API anahtari sifrelendi (goc)."); }
+                if (config.SecretUnreadable) log.Info("API anahtari cozulemedi — Ayarlar'dan yeniden girilmeli.");
+
                 var handler = new HttpClientHandler() {
                     // F19: SSL bypass scoped to TrueNAS IP only — not a blanket accept-all
                     ServerCertificateCustomValidationCallback = (msg, cert, chain, errors) => {
@@ -113,6 +118,7 @@ namespace KontroXXL_WinApp
                 try { ramUsageCounter = new PerformanceCounter("Memory", "% Committed Bytes In Use"); } catch { }
 
                 mainForm = new MainForm(config);
+                mainForm.Secrets = secrets;
                 _ = mainForm.Handle;
 
                 // C-3 (M-3): InitSerial() seri okuma dongusunu hemen baslatir; Connected
@@ -227,7 +233,7 @@ namespace KontroXXL_WinApp
 
         private void ShowMainForm()
         {
-            if (mainForm.IsDisposed) { mainForm = new MainForm(config); _ = mainForm.Handle; WireFormEvents(mainForm); }
+            if (mainForm.IsDisposed) { mainForm = new MainForm(config); mainForm.Secrets = secrets; _ = mainForm.Handle; WireFormEvents(mainForm); }
             mainForm.Show();
             mainForm.BringToFront();
         }
