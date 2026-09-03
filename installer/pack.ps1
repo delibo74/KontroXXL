@@ -5,23 +5,40 @@
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+. (Join-Path $PSScriptRoot "common.ps1")
+
 $root      = Resolve-Path (Join-Path $PSScriptRoot "..")
 $publishSc = Join-Path $PSScriptRoot "publish.ps1"
 $publishOut= Join-Path $root "publish"
 $releases  = Join-Path $root "releases"
 $props     = Join-Path $root "Directory.Build.props"
 $icon      = Join-Path $root "icon.ico"
+$proj      = Join-Path $root "src\KontroXXL_WinApp\KontroXXL_WinApp.csproj"
+
+# vpk SURUMU SABIT: 'dotnet tool install -g vpk' sabitlenmeden calistirilirsa temiz bir
+# makineye o gunun en yeni vpk'si iner ve projedeki Velopack kutuphanesiyle uyusmayan bir
+# paket uretir (paket bicimi/hook sozlesmesi surumler arasi degisiyor). Kaynak: csproj.
+$velopack = Get-VelopackPackageVersion -ProjectPath $proj
 
 if (-not (Get-Command vpk -ErrorAction SilentlyContinue)) {
-    throw "vpk bulunamadi. Once: dotnet tool install -g vpk"
+    throw "vpk bulunamadi. Once: dotnet tool install -g vpk --version $velopack"
+}
+
+# publish.ps1'deki damga kapisinin esdegeri: kurulu arac ile kutuphane ayni surumde mi?
+$vpkVersion = Get-InstalledVpkVersion
+if ([string]::IsNullOrWhiteSpace($vpkVersion)) {
+    throw "vpk kurulu gorunuyor ama surumu okunamadi ('dotnet tool list --global')."
+}
+if ($vpkVersion -ne $velopack) {
+    throw ("vpk surumu ($vpkVersion), Velopack PackageReference ($velopack) ile uyusmuyor. " +
+           "Duzelt: dotnet tool update -g vpk --version $velopack")
 }
 
 & $publishSc
 if ($LASTEXITCODE -ne 0) { throw "publish.ps1 basarisiz (cikis kodu $LASTEXITCODE)." }
 
-# Spec 8.9 — surum publish.ps1 ile AYNI kaynaktan okunur; paket damgasi da bu olur.
-$version = ([xml](Get-Content $props -Raw)).Project.PropertyGroup.Version
-if ([string]::IsNullOrWhiteSpace($version)) { throw "Directory.Build.props icinde <Version> okunamadi." }
+# Spec 8.9 — surum publish.ps1 ile AYNI kaynaktan, AYNI kodla okunur; paket damgasi da bu olur.
+$version = Get-BuildVersion -PropsPath $props
 
 if (-not (Test-Path $icon)) { throw "Ikon bulunamadi: $icon" }
 if (-not (Test-Path (Join-Path $publishOut "KontroXXL_WinApp.exe"))) { throw "Yayin ciktisi eksik: $publishOut" }

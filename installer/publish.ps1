@@ -6,17 +6,18 @@
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+. (Join-Path $PSScriptRoot "common.ps1")
+
 $root  = Resolve-Path (Join-Path $PSScriptRoot "..")
 $proj  = Join-Path $root "src\KontroXXL_WinApp\KontroXXL_WinApp.csproj"
 $out   = Join-Path $root "publish"
 $props = Join-Path $root "Directory.Build.props"
 
 if (-not (Test-Path $proj))  { throw "Proje bulunamadi: $proj" }
-if (-not (Test-Path $props)) { throw "Directory.Build.props bulunamadi: $props" }
 
-# Spec 8.9 — surumun tek kaynagi Directory.Build.props.
-$version = ([xml](Get-Content $props -Raw)).Project.PropertyGroup.Version
-if ([string]::IsNullOrWhiteSpace($version)) { throw "Directory.Build.props icinde <Version> okunamadi." }
+# Spec 8.9 — surumun tek kaynagi Directory.Build.props (okuma common.ps1'de,
+# pack.ps1 ile bit bite ayni bicimde).
+$version = Get-BuildVersion -PropsPath $props
 Write-Host "Surum: $version"
 
 # Eski cikti tamamen silinir: artik uretilmeyen bir dosyanin pakete sizmasi
@@ -36,8 +37,13 @@ if (-not (Test-Path $exe)) { throw "Yayin uretildi ama $exe yok." }
 
 # Spec 8.9 kapisi: exe'nin damgasi Directory.Build.props ile ayni olmali.
 # Ayarlar'daki "Hakkinda" satiri da ayni damgayi okuyor, boylece uc yer tek degerde bulusuyor.
-$stamped = (Get-Item $exe).VersionInfo.FileVersion
-if (-not $stamped.StartsWith($version)) {
+# Onek karsilastirmasi degil, normalize esitlik: "2.2.0" damgasi "2.2.0.0" olarak
+# yazilir (esit sayilmali), ama StartsWith "2.2.01" ya da "2.2.0-rc" gibi FARKLI bir
+# damgayi da gecirirdi — kapinin tam olarak yakalamasi gereken durum bu.
+$stamped  = (Get-Item $exe).VersionInfo.FileVersion
+$expected = ConvertTo-FourPartVersion -Value $version
+$actual   = ConvertTo-FourPartVersion -Value ([string]$stamped)
+if ($null -eq $actual -or $actual -ne $expected) {
     throw "Surum uyusmazligi: Directory.Build.props '$version' diyor, exe '$stamped' damgali."
 }
 
