@@ -1075,15 +1075,27 @@ namespace KontroXXL_WinApp
         private void SaveConfig() {
             config.TruenasIp     = txtNasIp.Text;
             config.TruenasApiKey = txtNasKey.Text;
-            if (Secrets != null) config.ApplyProtection(Secrets);
-            // Kullanici az once anahtari (yeniden) girip kaydetti — uyari artik gecerli degil.
-            lblSecretWarning.Visible = false;
+            if (Secrets != null)
+            {
+                var result = config.ApplyProtection(Secrets);
+                if (result == SecretApplyResult.Failed)
+                {
+                    MessageBox.Show(
+                        "API anahtarı şifrelenemedi. Kayıtlı anahtar korundu, değişiklik uygulanmadı.\n" +
+                        "Lütfen tekrar deneyin.",
+                        "KontroXXL", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;   // hicbir seyi kaydetme
+                }
+            }
             config.ArduinoPort   = cmbComPort.Text;
             config.EnableNasModule       = chkEnableNas.Checked;
             config.EnableArduinoModule   = chkEnableArduino.Checked;
             config.EnableShortcutsModule = chkEnableShortcuts.Checked;
             St(chkStartWithWindows.Checked);
             config.Save();
+            // Etiket her zaman config.SecretUnreadable'dan turetilir — UI-yerel bir
+            // override tutmuyoruz, boylece form yeniden olusturulsa bile dogru kalir.
+            lblSecretWarning.Visible = config.SecretUnreadable;
             OnSettingsSaved?.Invoke();
             MessageBox.Show("Yapılandırma başarıyla kaydedildi.", "KontroXXL", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }

@@ -6,6 +6,10 @@ using System.IO;
 
 namespace KontroXXL_WinApp
 {
+    /// <summary>A5 fix round 1: ApplyProtection'in sonucu — cagiran taraf "Failed"i
+    /// ayirt edip eski blobu korumali, sessizce bos deger yazmamali.</summary>
+    public enum SecretApplyResult { Applied, Unchanged, Failed }
+
     public class AppConfig
     {
         // Faz 2: yapilandirma semasi surumu. 3 = %APPDATA% donemi.
@@ -107,11 +111,12 @@ namespace KontroXXL_WinApp
             if (_dirty) Save();
         }
 
-        /// <summary>Yuklemeden sonra: sifreliyi coz, eski duz metni goc ettir.</summary>
+        /// <summary>Yuklemeden sonra: sifreliyi coz, eski duz metni goc ettir.
+        /// Fix round 1: alan atamalari SyncRoot altinda; protector cagrilari kilit disinda.</summary>
         public bool UnprotectSecrets(KontroXXL.Core.Security.ISecretProtector protector)
         {
             bool changed = false;
-            SecretUnreadable = false;
+            bool unreadable = false;
 
             // Faz 1 oncesi dosyalarda anahtar duz metin "TruenasApiKey" alanindaydi;
             // artik [JsonIgnore] oldugu icin _extra'ya dusuyor. Oradan al ve sifrele.
@@ -121,24 +126,62 @@ namespace KontroXXL_WinApp
                 _extra.Remove("TruenasApiKey");
                 if (!string.IsNullOrEmpty(plain))
                 {
-                    TruenasApiKey = plain;
-                    TruenasApiKeyProtected = protector.Protect(plain);
+                    string cipher = protector.Protect(plain);
+                    lock (SyncRoot)
+                    {
+                        TruenasApiKey = plain;
+                        TruenasApiKeyProtected = cipher;
+                    }
                     changed = true;
                 }
             }
             else if (!string.IsNullOrEmpty(TruenasApiKeyProtected))
             {
                 string plain = protector.Unprotect(TruenasApiKeyProtected);
-                if (plain == null) { SecretUnreadable = true; TruenasApiKey = ""; }
-                else TruenasApiKey = plain;
+                if (plain == null)
+                {
+                    unreadable = true;
+                    lock (SyncRoot) { TruenasApiKey = ""; }
+                }
+                else
+                {
+                    lock (SyncRoot) { TruenasApiKey = plain; }
+                }
             }
+
+            lock (SyncRoot) { SecretUnreadable = unreadable; }
 
             return changed;
         }
 
-        /// <summary>Kaydetmeden once: bellekteki duz metni sifreli alana yansit.</summary>
-        public void ApplyProtection(KontroXXL.Core.Security.ISecretProtector protector)
-            => TruenasApiKeyProtected = protector.Protect(TruenasApiKey);
+        /// <summary>
+        /// Kaydetmeden once bellekteki duz metni sifreli alana yansitir.
+        /// KURAL: mevcut blob YALNIZCA yerine gecerli bir yenisi konabiliyorsa degistirilir.
+        /// Cozulemeyen bir anahtar varken bos deger yazmak, kurtarilabilir veriyi yok eder.
+        /// </summary>
+        public SecretApplyResult ApplyProtection(KontroXXL.Core.Security.ISecretProtector protector)
+        {
+            string plain = TruenasApiKey ?? "";
+
+            if (plain.Length == 0)
+            {
+                // Cozulemeyen bir blob duruyor ve kullanici yeni bir sey yazmadi -> DOKUNMA.
+                if (SecretUnreadable) return SecretApplyResult.Unchanged;
+
+                // Kullanici alani bilerek bosaltti -> temizle.
+                lock (SyncRoot) { TruenasApiKeyProtected = ""; }
+                return SecretApplyResult.Applied;
+            }
+
+            // Sifreleme kilit DISINDA yapilir; kilit yalnizca atama icin alinir.
+            string cipher = protector.Protect(plain);
+            if (string.IsNullOrEmpty(cipher))
+                return SecretApplyResult.Failed;   // eski blob KORUNUR
+
+            lock (SyncRoot) { TruenasApiKeyProtected = cipher; }
+            SecretUnreadable = false;              // artik okunabilir bir anahtarimiz var
+            return SecretApplyResult.Applied;
+        }
 
         public void Save()
         {
