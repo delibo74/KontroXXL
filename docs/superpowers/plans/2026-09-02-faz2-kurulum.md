@@ -75,14 +75,14 @@ her görevin sonundaki somut elle kontrol listesidir. Sahte test yazılmaz.
   - `static class ConfigMigrator` — `static bool MigrateIfNeeded(string legacyFile, string targetFile)`
   - `AppConfig.SchemaVersion` (int, varsayılan 3)
 
-- [ ] **Step 1: Dalı aç**
+- [x] **Step 1: Dalı aç**
 
 ```bash
 cd "C:/Users/ibrahimk/Desktop/nas-lcd"
 git switch -c faz2-kurulum v2.1.0
 ```
 
-- [ ] **Step 2: Başarısız testleri yaz**
+- [x] **Step 2: Başarısız testleri yaz**
 
 `tests/KontroXXL.Core.Tests/Configuration/AppPathsTests.cs`:
 ```csharp
@@ -214,12 +214,12 @@ public class ConfigMigratorTests : IDisposable
 }
 ```
 
-- [ ] **Step 3: Testlerin başarısız olduğunu doğrula**
+- [x] **Step 3: Testlerin başarısız olduğunu doğrula**
 
 Run: `dotnet test --filter "AppPathsTests|ConfigMigratorTests"`
 Expected: FAIL — `AppPaths` ve `ConfigMigrator` bulunamıyor (CS0246).
 
-- [ ] **Step 4: İki tipi yaz**
+- [x] **Step 4: İki tipi yaz**
 
 `src/KontroXXL.Core/Configuration/AppPaths.cs`:
 ```csharp
@@ -288,12 +288,12 @@ public static class ConfigMigrator
 }
 ```
 
-- [ ] **Step 5: Testlerin geçtiğini doğrula**
+- [x] **Step 5: Testlerin geçtiğini doğrula**
 
 Run: `dotnet test --filter "AppPathsTests|ConfigMigratorTests"`
 Expected: PASS — 10 test.
 
-- [ ] **Step 6: `AppConfig`'e `SchemaVersion` ekle**
+- [x] **Step 6: `AppConfig`'e `SchemaVersion` ekle**
 
 `src/KontroXXL_WinApp/Models.cs`, `ArduinoPort` alanının hemen üstüne:
 ```csharp
@@ -301,7 +301,7 @@ Expected: PASS — 10 test.
         public int SchemaVersion { get; set; } = 3;
 ```
 
-- [ ] **Step 7: Uygulamayı yeni yollara bağla**
+- [x] **Step 7: Uygulamayı yeni yollara bağla**
 
 `src/KontroXXL_WinApp/TrayApplicationContext.cs` — sınıfa alan ekle ve ctor'un en başında göçü çalıştır. `config = AppConfig.Load();` satırını bul ve bloğu şununla değiştir:
 
@@ -347,14 +347,14 @@ Logger kurulumunu bul (`new RollingFileLogger(logFile, ...)`) ve yolu değiştir
 
 Üç `File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "crash.log"), …)` çağrısını `WriteCrash(…)` ile değiştir.
 
-- [ ] **Step 8: Derle, test et, elle doğrula**
+- [x] **Step 8: Derle, test et, elle doğrula**
 
 Run: `dotnet build KontroXXL.sln -c Release && dotnet test`
 Expected: yeşil, 161 test (151 + 10).
 
 Elle: `dotnet run --project src/KontroXXL_WinApp` (eski instance kapalıyken) → `%APPDATA%\KontroXXL\config.json` ve `%APPDATA%\KontroXXL\logs\app.log` oluşmalı; `bin/Release/.../config.json` **oluşmamalı**.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add src/KontroXXL.Core/Configuration tests/KontroXXL.Core.Tests/Configuration src/KontroXXL_WinApp/Models.cs src/KontroXXL_WinApp/Program.cs src/KontroXXL_WinApp/TrayApplicationContext.cs
@@ -379,7 +379,7 @@ git commit -m "feat(paths): move writable state to %APPDATA% with one-time migra
   - `AppConfig.TruenasApiKeyProtected` (string, serileşir) ve `AppConfig.TruenasApiKey` (`[JsonIgnore]`, bellekte)
   - `AppConfig.ApplyProtection(ISecretProtector)` / `AppConfig.UnprotectSecrets(ISecretProtector)`
 
-- [ ] **Step 1: Başarısız testleri yaz**
+- [x] **Step 1: Başarısız testleri yaz**
 
 `tests/KontroXXL.Core.Tests/Security/SecretProtectorTests.cs`:
 ```csharp
@@ -416,12 +416,12 @@ public class PlaintextSecretProtectorTests
 }
 ```
 
-- [ ] **Step 2: Testlerin başarısız olduğunu doğrula**
+- [x] **Step 2: Testlerin başarısız olduğunu doğrula**
 
 Run: `dotnet test --filter PlaintextSecretProtectorTests`
 Expected: FAIL — `ISecretProtector` bulunamıyor.
 
-- [ ] **Step 3: Core arayüzünü yaz**
+- [x] **Step 3: Core arayüzünü yaz**
 
 `src/KontroXXL.Core/Security/ISecretProtector.cs`:
 ```csharp
@@ -458,12 +458,12 @@ public sealed class PlaintextSecretProtector : ISecretProtector
 }
 ```
 
-- [ ] **Step 4: Testlerin geçtiğini doğrula**
+- [x] **Step 4: Testlerin geçtiğini doğrula**
 
 Run: `dotnet test --filter PlaintextSecretProtectorTests`
 Expected: PASS — 4 test.
 
-- [ ] **Step 5: DPAPI implementasyonunu yaz**
+- [x] **Step 5: DPAPI implementasyonunu yaz**
 
 `src/KontroXXL_WinApp/KontroXXL_WinApp.csproj` `ItemGroup`'una ekle:
 ```xml
@@ -519,7 +519,7 @@ namespace KontroXXL_WinApp
 }
 ```
 
-- [ ] **Step 6: `AppConfig`'i şifreli alana geçir**
+- [x] **Step 6: `AppConfig`'i şifreli alana geçir**
 
 `src/KontroXXL_WinApp/Models.cs` — `TruenasApiKey` satırını şununla değiştir:
 ```csharp
@@ -568,7 +568,7 @@ Sınıfa iki metot ekle (`Save()`'in hemen üstüne):
             => TruenasApiKeyProtected = protector.Protect(TruenasApiKey);
 ```
 
-- [ ] **Step 7: Uygulamayı bağla**
+- [x] **Step 7: Uygulamayı bağla**
 
 `TrayApplicationContext.cs`, Task 1'de eklediğin `config = AppConfig.Load(...)` bloğundan hemen sonra:
 ```csharp
@@ -599,7 +599,7 @@ Alan: `private KontroXXL.Core.Security.ISecretProtector secrets;`
 
 `SecretUnreadable` doluysa Ayarlar sekmesinde API alanının altına kırmızı bir uyarı etiketi göster: `"⚠ Kayıtlı anahtar çözülemedi, lütfen yeniden girin."`
 
-- [ ] **Step 8: Derle, test et, gözle doğrula**
+- [x] **Step 8: Derle, test et, gözle doğrula**
 
 Run: `dotnet build KontroXXL.sln -c Release && dotnet test`
 Expected: yeşil, 165 test.
@@ -608,7 +608,7 @@ Expected: yeşil, 165 test.
 `%APPDATA%\KontroXXL\config.json` dosyasını **aç ve gözle bak** — `TruenasApiKeyProtected`
 base64 olmalı, girdiğin anahtar **hiçbir yerde düz metin geçmemeli**.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add src/KontroXXL.Core/Security tests/KontroXXL.Core.Tests/Security src/KontroXXL_WinApp/DpapiSecretProtector.cs src/KontroXXL_WinApp/Models.cs src/KontroXXL_WinApp/TrayApplicationContext.cs src/KontroXXL_WinApp/MainForm.cs src/KontroXXL_WinApp/KontroXXL_WinApp.csproj
@@ -627,7 +627,7 @@ git commit -m "feat(security): encrypt the TrueNAS API key with DPAPI, migrate p
 - Consumes: Task 1–2 çıktıları
 - Produces: `AppConfig.AutoDetectPort` (bool); `RollingFileLogger` ctor'una `Func<string, StreamWriter>? writerFactory` parametresi
 
-- [ ] **Step 1: A9 — `AutoDetectPort` bayrağı**
+- [x] **Step 1: A9 — `AutoDetectPort` bayrağı**
 
 `Models.cs`, `ArduinoPort` yanına:
 ```csharp
@@ -646,7 +646,7 @@ git commit -m "feat(security): encrypt the TrueNAS API key with DPAPI, migrate p
 `"Portu otomatik algıla"`, `chkAutoDetectPort`. `LoadConfigToUI`/`SaveConfig`'e bağla.
 İşaretliyken ComboBox devre dışı olsun.
 
-- [ ] **Step 2: D1 — `_dirty` yarışını kapat**
+- [x] **Step 2: D1 — `_dirty` yarışını kapat**
 
 `Models.cs` `Save()` içindeki serileştirme/yazım bloğunu şununla değiştir:
 ```csharp
@@ -663,7 +663,7 @@ git commit -m "feat(security): encrypt the TrueNAS API key with DPAPI, migrate p
             catch { lock (SyncRoot) { _dirty = true; } throw; }   // yazim patlarsa flush kaybolmasin
 ```
 
-- [ ] **Step 3: D2 — `.tmp` dosyasının hedefle aynı dizinde olduğunu teste bağla**
+- [x] **Step 3: D2 — `.tmp` dosyasının hedefle aynı dizinde olduğunu teste bağla**
 
 `JsonFileStore.cs`'e açıklayıcı yorum ekle:
 ```csharp
@@ -685,7 +685,7 @@ git commit -m "feat(security): encrypt the TrueNAS API key with DPAPI, migrate p
     }
 ```
 
-- [ ] **Step 4: D3 — reopen hatasını gerçekten tetikleyen test**
+- [x] **Step 4: D3 — reopen hatasını gerçekten tetikleyen test**
 
 `RollingFileLogger` şu anda `StreamWriter`'ı doğrudan kuruyor, bu yüzden reopen hatası
 test edilemiyor. Enjekte edilebilir hâle getir. `RollingFileLogger.cs` ctor'unu değiştir:
@@ -736,7 +736,7 @@ testini **değiştir**:
 (`if (_writer is null) return;` hâline getir), testin **kırmızıya döndüğünü** göster,
 sonra geri al ve yeşili doğrula. İki çıktıyı da raporla.
 
-- [ ] **Step 5: D4 — kaydetme hatasını kullanıcıya göster**
+- [x] **Step 5: D4 — kaydetme hatasını kullanıcıya göster**
 
 `MainForm.SaveConfig()` içindeki `config.Save();` çağrısını sar:
 ```csharp
@@ -749,7 +749,7 @@ sonra geri al ve yeşili doğrula. İki çıktıyı da raporla.
             }
 ```
 
-- [ ] **Step 6: Derle, test et, commit**
+- [x] **Step 6: Derle, test et, commit**
 
 Run: `dotnet build KontroXXL.sln -c Release && dotnet test`
 Expected: yeşil, 166 test.
@@ -765,9 +765,9 @@ git commit -m "fix: close phase-1 carry-overs — auto-detect flag, dirty race, 
 
 **Files:** `Directory.Build.props`, `src/KontroXXL_WinApp/KontroXXL_WinApp.csproj`, `installer/publish.ps1`
 
-- [ ] **Step 1:** `Directory.Build.props`'ta `<Version>2.2.0</Version>`; `<AssemblyVersion>`/`<FileVersion>` de aynı değere bağla.
-- [ ] **Step 2:** Ayarlar sekmesine "Hakkında" satırı: `typeof(Program).Assembly.GetName().Version` gösterilsin — spec §8.9'un tek-sürüm kriteri.
-- [ ] **Step 3:** `installer/publish.ps1`:
+- [x] **Step 1:** `Directory.Build.props`'ta `<Version>2.2.0</Version>`; `<AssemblyVersion>`/`<FileVersion>` de aynı değere bağla.
+- [x] **Step 2:** Ayarlar sekmesine "Hakkında" satırı: `typeof(Program).Assembly.GetName().Version` gösterilsin — spec §8.9'un tek-sürüm kriteri.
+- [x] **Step 3:** `installer/publish.ps1`:
 ```powershell
 $ErrorActionPreference = "Stop"
 $out = Join-Path $PSScriptRoot "..\publish"
@@ -776,8 +776,8 @@ dotnet publish "$PSScriptRoot\..\src\KontroXXL_WinApp\KontroXXL_WinApp.csproj" `
     -c Release -r win-x64 --self-contained false -o $out
 Write-Host "Yayin hazir: $out"
 ```
-- [ ] **Step 4:** Çalıştır, `publish/` içinde `KontroXXL_WinApp.exe` oluştuğunu doğrula. `publish/` `.gitignore`'da (Faz 1'de eklendi) — kontrol et.
-- [ ] **Step 5:** Commit.
+- [x] **Step 4:** Çalıştır, `publish/` içinde `KontroXXL_WinApp.exe` oluştuğunu doğrula. `publish/` `.gitignore`'da (Faz 1'de eklendi) — kontrol et.
+- [x] **Step 5:** Commit.
 
 ---
 
@@ -789,13 +789,13 @@ Write-Host "Yayin hazir: $out"
 Velopack kurulum/güncelleme hook'ları bu çağrıda çalışır ve process'i sonlandırabilir.
 Yanlış sırada kurulum sessizce bozulur (spec §9).
 
-- [ ] **Step 1:** `dotnet add src/KontroXXL_WinApp package Velopack`
-- [ ] **Step 2:** `Program.Main`'in ilk satırı:
+- [x] **Step 1:** `dotnet add src/KontroXXL_WinApp package Velopack`
+- [x] **Step 2:** `Program.Main`'in ilk satırı:
 ```csharp
             // Velopack kurulum/guncelleme hook'lari — mutex dahil HER SEYDEN once.
             Velopack.VelopackApp.Build().Run();
 ```
-- [ ] **Step 3:** Tray menüsüne "Güncellemeleri Denetle" ekle:
+- [x] **Step 3:** Tray menüsüne "Güncellemeleri Denetle" ekle:
 ```csharp
                 cms.Items.Add("Güncellemeleri Denetle", null, async (s, e) => await CheckUpdatesAsync());
 ```
@@ -824,7 +824,7 @@ Yanlış sırada kurulum sessizce bozulur (spec §9).
 ```
 `UpdateFeedUrl` sabitini Task 7'de gerçek depo adresiyle doldur; o zamana kadar `const string UpdateFeedUrl = "";` ve boşsa metot kullanıcıya "güncelleme kaynağı yapılandırılmamış" desin.
 
-- [ ] **Step 4:** `installer/pack.ps1`:
+- [x] **Step 4:** `installer/pack.ps1`:
 ```powershell
 $ErrorActionPreference = "Stop"
 & "$PSScriptRoot\publish.ps1"
@@ -835,8 +835,8 @@ vpk pack --packId KontroXXL --packVersion $ver `
          --icon "$PSScriptRoot\..\icon.ico" `
          --outputDir "$PSScriptRoot\..\releases"
 ```
-- [ ] **Step 5:** `dotnet tool install -g vpk`, sonra `installer/pack.ps1` çalıştır. `releases/` altında `KontroXXL-win-Setup.exe` oluşmalı. `releases/` `.gitignore`'a ekle.
-- [ ] **Step 6:** Commit.
+- [x] **Step 5:** `dotnet tool install -g vpk`, sonra `installer/pack.ps1` çalıştır. `releases/` altında `KontroXXL-win-Setup.exe` oluşmalı. `releases/` `.gitignore`'a ekle.
+- [x] **Step 6:** Commit.
 
 **Kabul (spec §8.3, §8.4, §8.8):** Kurulum exe'sini çift tıkla çalıştır → Başlat menüsünde kısayol, uygulama açılıyor, `%APPDATA%\KontroXXL\config.json` oluşuyor, kurulum dizinine hiçbir şey yazılmıyor. Kaldır → kısayol gidiyor, `%APPDATA%\KontroXXL\` **kalıyor**. **Bu adımlar Karaduman'a borçlu.**
 
@@ -909,12 +909,12 @@ görünmesi değildir. Farkı gözle ayır.
 
 ## Task 8: Dokümanlar ve kabul
 
-- [ ] **Step 1:** `README.md` — kurulum bölümü (Setup exe'si, SmartScreen uyarısı beklenir), `%APPDATA%` yolları, `config.json` elle düzenlemeden önce uygulamayı kapatma uyarısı (Faz 1'de eklendi, yol değiştiği için güncelle).
-- [ ] **Step 2:** `DOCS.md` — §2 dosya haritasına `installer/`, `firmware/*.hex`; yeni bir "§12 Kurulum ve güncelleme" bölümü; `%APPDATA%` yolları; DPAPI notu.
-- [ ] **Step 3:** `TODO.md` — "Config Şifreleme" ve "Versiyon Kontrolü" maddelerini işaretle; kalan Faz 3/4 maddelerini güncelle.
-- [ ] **Step 4:** Sürüm numaralarını 2.2.0'da tekleştir (spec dosyalarına dokunma — onlar tarihli anlık görüntü).
-- [ ] **Step 5:** Spec §8'deki 9 kabul kriterini sırayla geç; koşulamayanları açıkça "Karaduman'a borçlu" diye işaretle. Sahte onay yok.
-- [ ] **Step 6:** Commit; etiketleme controller'a ait.
+- [x] **Step 1:** `README.md` — kurulum bölümü (Setup exe'si, SmartScreen uyarısı beklenir), `%APPDATA%` yolları, `config.json` elle düzenlemeden önce uygulamayı kapatma uyarısı (Faz 1'de eklendi, yol değiştiği için güncelle).
+- [x] **Step 2:** `DOCS.md` — §2 dosya haritasına `installer/`, `firmware/*.hex`; yeni bir "§12 Kurulum ve güncelleme" bölümü; `%APPDATA%` yolları; DPAPI notu.
+- [x] **Step 3:** `TODO.md` — "Config Şifreleme" ve "Versiyon Kontrolü" maddelerini işaretle; kalan Faz 3/4 maddelerini güncelle.
+- [x] **Step 4:** Sürüm numaralarını 2.2.0'da tekleştir (spec dosyalarına dokunma — onlar tarihli anlık görüntü).
+- [x] **Step 5:** Spec §8'deki 9 kabul kriterini sırayla geç; koşulamayanları açıkça "Karaduman'a borçlu" diye işaretle. Sahte onay yok.
+- [x] **Step 6:** Commit; etiketleme controller'a ait.
 
 ---
 
