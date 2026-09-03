@@ -7,7 +7,11 @@ namespace KontroXXL_WinApp
 {
     internal static class Program
     {
-        private static Mutex mutex = new Mutex(true, "{KONTROXXL-77BB-42C1-BD61-A0B89C2D1F20}");
+        // Mutex'i ALAN INITIALIZER'DA kurmuyoruz: statik alan baslaticilari Main'in
+        // govdesinden ONCE kosar, o zaman VelopackApp.Run() gercekte ilk is olmaz.
+        // Spec 9 bu sirayi kritik sayiyor, o yuzden mutex Main icinde kuruluyor.
+        private const string MutexName = "{KONTROXXL-77BB-42C1-BD61-A0B89C2D1F20}";
+        private static Mutex mutex;
 
         static void WriteCrash(string message)
         {
@@ -24,6 +28,21 @@ namespace KontroXXL_WinApp
         [STAThread]
         static void Main()
         {
+            // ILK IS. Velopack kurulum/guncelleme hook'lari burada calisir ve process'i
+            // sonlandirabilir; oncesinde mutex almak kurulumu sessizce bozar (spec 9).
+            // Hook basarisiz olursa yutmuyoruz: crash.log'a yazip yeniden firlatiyoruz,
+            // cunku yarim kalmis bir kurulumun uzerine normal acilis daha kotu.
+            try
+            {
+                Velopack.VelopackApp.Build().Run();
+            }
+            catch (Exception ex)
+            {
+                WriteCrash("Velopack hook hatasi: " + ex);
+                throw;
+            }
+
+            mutex = new Mutex(true, MutexName);
             if (!mutex.WaitOne(TimeSpan.Zero, true))
             {
                 // Zaten calisiyor

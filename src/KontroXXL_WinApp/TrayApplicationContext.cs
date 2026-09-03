@@ -132,6 +132,7 @@ namespace KontroXXL_WinApp
                 var cms = new ContextMenuStrip();
                 cms.Items.Add("Arayüzü Aç", null, (s, e) => ShowMainForm());
                 cms.Items.Add("Yeniden Yükle", null, (s, e) => Reload());
+                cms.Items.Add("Güncellemeleri Denetle", null, async (s, e) => await CheckUpdatesAsync());
                 cms.Items.Add(new ToolStripSeparator());
                 cms.Items.Add("Çıkış", null, (s, e) => {
                     try { config.FlushIfDirty(); } catch { }
@@ -229,6 +230,74 @@ namespace KontroXXL_WinApp
             form.OnServiceAction += (idx, svc, act) => Task.Run(() => NasServiceAction(svc, act));
             form.OnShortcutsUpdate += () => { config.Save(); Log("Kısayollar güncellendi."); Task.Run(() => PushArduinoData()); };
             form.OnSettingsSaved += () => Reload();
+        }
+
+        // Task 7'de gercek depo adresiyle doldurulacak. Bos oldugu surece guncelleme
+        // menusu kullaniciya bunu ACIKCA soyler — sessizce hicbir sey yapmaz.
+        private const string UpdateFeedUrl = "";
+
+        // Menu ogesi tekrar tekrar tiklanabilir; indirme suruyorken ikinci bir
+        // UpdateManager acmak ayni dosyalari ustuste yazardi. Yalnizca UI thread'inden
+        // okunup yazildigi icin kilide gerek yok.
+        private bool updateCheckRunning;
+
+        private async Task CheckUpdatesAsync()
+        {
+            if (updateCheckRunning) return;
+            updateCheckRunning = true;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(UpdateFeedUrl))
+                {
+                    MessageBox.Show("Güncelleme kaynağı yapılandırılmamış.", "KontroXXL",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                var mgr = new Velopack.UpdateManager(
+                    new Velopack.Sources.GithubSource(UpdateFeedUrl, null, false));
+
+                // Kurulmamis (portable/derleme dizininden calisan) bir kopyada
+                // ApplyUpdatesAndRestart firlatir. Once soyle, sonra deneme.
+                if (!mgr.IsInstalled)
+                {
+                    MessageBox.Show("Bu kopya kurulum paketiyle kurulmamış; güncelleme yapılamaz.",
+                        "KontroXXL", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                var newVer = await mgr.CheckForUpdatesAsync();
+                if (newVer == null)
+                {
+                    MessageBox.Show("Zaten güncelsiniz.", "KontroXXL",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                if (MessageBox.Show($"Yeni sürüm: {newVer.TargetFullRelease.Version}\nŞimdi güncellensin mi?",
+                        "KontroXXL", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+
+                await mgr.DownloadUpdatesAsync(newVer);
+
+                // Yeniden baslatma bu process'i oldurur: cikis yolunun yaptigi her seyi
+                // once burada yapmak gerekiyor — kirli config diske insin, LCD veda yazsin,
+                // COM portu birakilsin (acik kalirsa yeni process porta baglanamaz).
+                try { config.FlushIfDirty(); } catch (Exception ex) { log.Error("Guncelleme oncesi config yazilamadi", ex); }
+                SendGoodbye();
+                serial?.Dispose();
+                if (trayIcon != null) trayIcon.Visible = false;
+
+                log.Info("Guncelleme uygulaniyor: " + newVer.TargetFullRelease.Version);
+                mgr.ApplyUpdatesAndRestart(newVer.TargetFullRelease);
+            }
+            catch (Exception ex)
+            {
+                // Sessiz basarisizlik yasak (spec 9): kullanici "Denetle"ye bastiginda
+                // hicbir sey olmamasi, guncelleme yok sanmasina yol acar.
+                log.Error("Guncelleme denetimi hatasi", ex);
+                MessageBox.Show("Güncelleme denetlenemedi:\n\n" + ex.Message, "KontroXXL",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            finally { updateCheckRunning = false; }
         }
 
         private void ShowMainForm()

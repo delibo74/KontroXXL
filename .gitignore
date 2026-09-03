@@ -29,3 +29,6 @@ config.json
 .remember/
 .claude/settings.local.json
 .superpowers/
+
+# Velopack kurulum paketleri — kaynaktan uretilir
+releases/
