@@ -28,6 +28,23 @@ namespace KontroXXL_WinApp
         [STAThread]
         static void Main()
         {
+            // Cokme yakalayicilari EN BASTA baglanir: Velopack hook'u kendi icinde
+            // firlatabilir ve o an hicbir handler bagli degilse kullanici uygulamanin
+            // kendi kutusu yerine ham .NET cokme diyalogunu gorur, crash.log'a da hicbir
+            // sey dusmez. Buradaki tek is bir OLAYA ABONE OLMAK: hicbir statik baslatici
+            // tetiklenmez, dolayisiyla VelopackApp.Run() hala Main govdesinin ilk GERCEK
+            // isi olarak kalir (spec 9'un istedigi sira korunur).
+            AppDomain.CurrentDomain.UnhandledException += (s, e) => {
+                string m = e.ExceptionObject?.ToString() ?? "Bilinmeyen hata";
+                WriteCrash(m);
+                MessageBox.Show("Kritik Sistem Hatasi:\n\n" + m.Split('\n')[0], "KontroXXL", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            };
+
+            Application.ThreadException += (s, e) => {
+                string m = e.Exception?.ToString() ?? "Bilinmeyen hata";
+                WriteCrash(m);
+            };
+
             // ILK IS. Velopack kurulum/guncelleme hook'lari burada calisir ve process'i
             // sonlandirabilir; oncesinde mutex almak kurulumu sessizce bozar (spec 9).
             // Hook basarisiz olursa yutmuyoruz: crash.log'a yazip yeniden firlatiyoruz,
@@ -48,17 +65,6 @@ namespace KontroXXL_WinApp
                 // Zaten calisiyor
                 return;
             }
-
-            AppDomain.CurrentDomain.UnhandledException += (s, e) => {
-                string m = e.ExceptionObject?.ToString() ?? "Bilinmeyen hata";
-                WriteCrash(m);
-                MessageBox.Show("Kritik Sistem Hatasi:\n\n" + m.Split('\n')[0], "KontroXXL", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            };
-
-            Application.ThreadException += (s, e) => {
-                string m = e.Exception?.ToString() ?? "Bilinmeyen hata";
-                WriteCrash(m);
-            };
 
             try {
                 Application.EnableVisualStyles();
