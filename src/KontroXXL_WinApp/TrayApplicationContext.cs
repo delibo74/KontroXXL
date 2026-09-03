@@ -18,6 +18,7 @@ using System.IO;
 using KontroXXL.Core.Logging;
 using KontroXXL.Core.Lcd;
 using KontroXXL.Core.Configuration;
+using KontroXXL.Core.Diagnostics;
 
 namespace KontroXXL_WinApp
 {
@@ -241,9 +242,21 @@ namespace KontroXXL_WinApp
         // okunup yazildigi icin kilide gerek yok.
         private bool updateCheckRunning;
 
+        // Yikim (config flush + LCD vedasi + seri port + tepsi ikonu) islendikten SONRA
+        // true olur. ApplyUpdatesAndRestart o noktadan sonra firlarsa surec artik
+        // onarilamaz; catch bunu gorup kapanmayi secer.
+        private bool updateTornDown;
+
         private async Task CheckUpdatesAsync()
         {
-            if (updateCheckRunning) return;
+            if (updateCheckRunning)
+            {
+                // Spec 9: sessiz basarisizlik yasak. Menuye ikinci kez basan kullanici
+                // hicbir sey olmadigini gorurse denetimin hic calismadigini sanir.
+                MessageBox.Show("Güncelleme denetimi zaten sürüyor.", "KontroXXL",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
             updateCheckRunning = true;
             try
             {
@@ -281,6 +294,9 @@ namespace KontroXXL_WinApp
                 // Yeniden baslatma bu process'i oldurur: cikis yolunun yaptigi her seyi
                 // once burada yapmak gerekiyor — kirli config diske insin, LCD veda yazsin,
                 // COM portu birakilsin (acik kalirsa yeni process porta baglanamaz).
+                // Bu noktadan sonra surec onarilamaz duruma girer: bayrak, asagidaki
+                // catch'in "devam et" ile "kapan" arasinda dogru secimi yapmasini saglar.
+                updateTornDown = true;
                 try { config.FlushIfDirty(); } catch (Exception ex) { log.Error("Guncelleme oncesi config yazilamadi", ex); }
                 SendGoodbye();
                 serial?.Dispose();
@@ -292,10 +308,28 @@ namespace KontroXXL_WinApp
             catch (Exception ex)
             {
                 // Sessiz basarisizlik yasak (spec 9): kullanici "Denetle"ye bastiginda
-                // hicbir sey olmamasi, guncelleme yok sanmasina yol acar.
+                // hicbir sey olmamasi, guncelleme yok sanmasina yol acar. Sessiz-BOZUK
+                // durum ise daha kotusu: yikim islendikten SONRA hata alirsak, uyari
+                // gosterip devam etmek tepsisi gizli, seri portu kapali, LCD'sinde
+                // "BYE BYE" yazan ve kullanicinin menuye ulasamadigi bir hayalet surec
+                // birakirdi. Yikim geri alinamaz; tek dogru davranis: soyle ve kapan.
                 log.Error("Guncelleme denetimi hatasi", ex);
-                MessageBox.Show("Güncelleme denetlenemedi:\n\n" + ex.Message, "KontroXXL",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                var response = UpdateFailurePolicy.Describe(updateTornDown, ex.Message);
+
+                if (response.MustExit && trayIcon != null)
+                {
+                    // Seri port ve LCD geri getirilemez, ama ikonu geri koymak kullaniciya
+                    // kapanana kadar gorunur bir uygulama birakir (gizli/tikleyen surec degil).
+                    trayIcon.Visible = true;
+                }
+
+                MessageBox.Show(response.Message, "KontroXXL", MessageBoxButtons.OK,
+                    response.MustExit ? MessageBoxIcon.Error : MessageBoxIcon.Warning);
+
+                if (response.MustExit)
+                {
+                    Application.Exit();
+                }
             }
             finally { updateCheckRunning = false; }
         }
