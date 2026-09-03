@@ -15,7 +15,12 @@ namespace KontroXXL_WinApp
         // Faz 2: yapilandirma semasi surumu. 3 = %APPDATA% donemi.
         public int SchemaVersion { get; set; } = 3;
 
-        public string ArduinoPort { get; set; } = "COM4";
+        public string ArduinoPort { get; set; } = "";
+
+        // A9: v2'de "COM4" degeri sihirli sekilde "otomatik algila" demekti.
+        // Gercekten COM4'teki cihazi olan kullanici surekli eziliyordu.
+        public bool AutoDetectPort { get; set; } = true;
+
         public int ArduinoBaud { get; set; } = 115200;
         public string TruenasIp { get; set; } = "";
 
@@ -206,11 +211,13 @@ namespace KontroXXL_WinApp
             lock (SyncRoot)
             {
                 json = JsonConvert.SerializeObject(this, Formatting.Indented);
+                // D1: bayragi anlik goruntuyle AYNI kilitte temizle. Ayri bir kilit
+                // aliminda temizlemek, disk I/O penceresinde gelen MarkDirty()'yi eziyordu.
+                _dirty = false;
             }
-            KontroXXL.Core.Configuration.JsonFileStore.WriteAtomic(SourcePath, json);
 
-            // M-1: _dirty ancak yazim BASARILI olduktan sonra temizlenmeli.
-            lock (SyncRoot) { _dirty = false; }
+            try { KontroXXL.Core.Configuration.JsonFileStore.WriteAtomic(SourcePath, json); }
+            catch { lock (SyncRoot) { _dirty = true; } throw; }   // yazim patlarsa flush kaybolmasin
         }
     }
 

@@ -22,8 +22,11 @@ public sealed class RollingFileLogger : ILog, IDisposable
     long _size;
     bool _disposed;
 
+    readonly Func<string, StreamWriter> _writerFactory;
+
     public RollingFileLogger(string path, LogLevel minLevel = LogLevel.Info,
-                             long maxBytes = 1_048_576, int keep = 3)
+                             long maxBytes = 1_048_576, int keep = 3,
+                             Func<string, StreamWriter>? writerFactory = null)
     {
         _path = path;
         _dir = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".";
@@ -32,6 +35,8 @@ public sealed class RollingFileLogger : ILog, IDisposable
         _minLevel = minLevel;
         _maxBytes = maxBytes;
         _keep = Math.Max(1, keep);
+        _writerFactory = writerFactory ??
+            (p => new StreamWriter(p, append: true, Encoding.UTF8) { AutoFlush = false });
 
         Directory.CreateDirectory(_dir);
         Open();
@@ -73,7 +78,7 @@ public sealed class RollingFileLogger : ILog, IDisposable
     {
         var fi = new FileInfo(_path);
         _size = fi.Exists ? fi.Length : 0;
-        _writer = new StreamWriter(_path, append: true, Encoding.UTF8) { AutoFlush = false };
+        _writer = _writerFactory(_path);
     }
 
     string Archive(int n) => Path.Combine(_dir, $"{_stem}.{n}{_ext}");

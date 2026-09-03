@@ -270,7 +270,7 @@ namespace KontroXXL_WinApp
             serial = new SerialLink(log,
                 preferredPort: () => config.ArduinoPort,
                 baud: () => config.ArduinoBaud,
-                autoDetect: () => string.IsNullOrEmpty(config.ArduinoPort));
+                autoDetect: () => config.AutoDetectPort);
 
             serial.Connected += () => {
                 lock (config.SyncRoot)

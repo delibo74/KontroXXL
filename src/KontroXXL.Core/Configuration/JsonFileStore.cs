@@ -15,6 +15,8 @@ public static class JsonFileStore
         string dir = Path.GetDirectoryName(full) ?? ".";
         Directory.CreateDirectory(dir);
 
+        // D2: gecici dosya HER ZAMAN hedefin yanina yazilir. File.Replace kaynak ve
+        // hedefin ayni volume'de olmasini sart kosuyor; boylece bu sart yapisal olarak saglanir.
         string tmp = full + ".tmp";
         File.WriteAllText(tmp, content, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
 

@@ -65,4 +65,15 @@ public class JsonFileStoreTests : IDisposable
         Assert.Null(JsonFileStore.ReadOrNull(p));
         Assert.True(File.Exists(p), "test kurulumu: dosya var olmali");
     }
+
+    [Fact]
+    public void Temp_file_is_created_beside_the_target_so_File_Replace_stays_same_volume()
+    {
+        string target = P("a.json");
+        JsonFileStore.WriteAtomic(target, "{}");          // hedefi olustur
+        JsonFileStore.WriteAtomic(target, "{\"x\":1}");   // File.Replace yolu
+
+        Assert.Equal("{\"x\":1}", File.ReadAllText(target));
+        Assert.Empty(Directory.GetFiles(_dir, "*.tmp"));
+    }
 }

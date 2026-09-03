@@ -210,6 +210,7 @@ namespace KontroXXL_WinApp
         private TextBox txtNasIp, txtNasKey;
         private Label lblSecretWarning;
         private ComboBox cmbComPort;
+        private CheckBox chkAutoDetectPort;
         private CheckBox chkEnableNas, chkEnableArduino, chkEnableShortcuts, chkStartWithWindows;
         private ListBox lstShortcuts;
 
@@ -817,7 +818,18 @@ namespace KontroXXL_WinApp
                 FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 10)
             };
             try { cmbComPort.Items.AddRange(System.IO.Ports.SerialPort.GetPortNames()); } catch { }
-            p.Controls.Add(cmbComPort); y += 48;
+            p.Controls.Add(cmbComPort);
+
+            chkAutoDetectPort = new CheckBox() {
+                Text = "Portu otomatik algıla",
+                Location = new Point(cmbComPort.Right + 16, y + 3),
+                AutoSize = true,
+                ForeColor = Color.LightGray,
+                Font = new Font("Segoe UI", 10)
+            };
+            chkAutoDetectPort.CheckedChanged += (s, e) => cmbComPort.Enabled = !chkAutoDetectPort.Checked;
+            p.Controls.Add(chkAutoDetectPort);
+            y += 48;
 
             // Toggles section
             p.Controls.Add(new Label() { Text = "— Modül Ayarları —", Font = new Font("Segoe UI Semibold", 9), ForeColor = Color.FromArgb(100, 140, 200), Location = new Point(0, y), AutoSize = true }); y += 28;
@@ -1066,6 +1078,8 @@ namespace KontroXXL_WinApp
             txtNasKey.Text  = config.TruenasApiKey;
             lblSecretWarning.Visible = config.SecretUnreadable;
             cmbComPort.Text = config.ArduinoPort;
+            chkAutoDetectPort.Checked = config.AutoDetectPort;
+            cmbComPort.Enabled = !chkAutoDetectPort.Checked;
             chkEnableNas.Checked       = config.EnableNasModule;
             chkEnableArduino.Checked   = config.EnableArduinoModule;
             chkEnableShortcuts.Checked = config.EnableShortcutsModule;
@@ -1096,14 +1110,30 @@ namespace KontroXXL_WinApp
                 config.TruenasApiKey = txtNasKey.Text;
             }
 
-            // Buradan itibaren kalici degisiklikler.
-            config.TruenasIp     = txtNasIp.Text;
-            config.ArduinoPort   = cmbComPort.Text;
-            config.EnableNasModule       = chkEnableNas.Checked;
-            config.EnableArduinoModule   = chkEnableArduino.Checked;
-            config.EnableShortcutsModule = chkEnableShortcuts.Checked;
+            // Buradan itibaren kalici degisiklikler. Diger her yazar SyncRoot altinda
+            // calisiyor (telemetri, UnprotectSecrets, ApplyProtection); burasi da ayni
+            // kurala uymali. Save() kendi SyncRoot'unu ayrica alir — kilidi disk
+            // yazimina kadar genisletmiyoruz (D1'in onlemeye calistigi seyi
+            // tekrarlamamak icin, telemetri kilidini gereksiz yere uzatmiyoruz).
+            lock (config.SyncRoot)
+            {
+                config.TruenasIp       = txtNasIp.Text;
+                config.ArduinoPort     = cmbComPort.Text;
+                config.AutoDetectPort  = chkAutoDetectPort.Checked;
+                config.EnableNasModule       = chkEnableNas.Checked;
+                config.EnableArduinoModule   = chkEnableArduino.Checked;
+                config.EnableShortcutsModule = chkEnableShortcuts.Checked;
+            }
             St(chkStartWithWindows.Checked);
-            config.Save();
+
+            try { config.Save(); }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Yapılandırma kaydedilemedi:\n\n" + ex.Message,
+                    "KontroXXL", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;   // "basariyla kaydedildi" mesajini gosterme
+            }
+
             // Etiket her zaman config.SecretUnreadable'dan turetilir — UI-yerel bir
             // override tutmuyoruz, boylece form yeniden olusturulsa bile dogru kalir.
             lblSecretWarning.Visible = config.SecretUnreadable;

@@ -93,19 +93,27 @@ public class RollingFileLoggerTests : IDisposable
     }
 
     [Fact]
-    public void Keeps_logging_after_a_rotation_whose_reopen_failed()
+    public void Recovers_when_the_post_rotation_reopen_throws()
     {
-        using (var log = new RollingFileLogger(Path0, LogLevel.Info, maxBytes: 100, keep: 2))
+        int calls = 0;
+        StreamWriter Factory(string p)
         {
-            // Döndürmeyi tetikle
-            for (int i = 0; i < 10; i++) log.Info(new string('a', 40));
+            calls++;
+            // 1. cagri: ctor. 2. cagri: rotasyon sonrasi reopen -> PATLAT.
+            // 3. cagri: Write'in retry'i -> basarili olmali.
+            if (calls == 2) throw new IOException("simule edilmis kilit");
+            return new StreamWriter(p, append: true, System.Text.Encoding.UTF8) { AutoFlush = false };
+        }
 
-            // Döndürme sonrası hâlâ yazabiliyor olmalı — sessizce ölmemeli.
-            log.Info("rotasyondan-sonra");
-        }   // logger burada kapanır, dosyalar serbest kalır
+        using (var log = new RollingFileLogger(Path0, LogLevel.Info, maxBytes: 100, keep: 2, writerFactory: Factory))
+        {
+            for (int i = 0; i < 10; i++) log.Info(new string('a', 40));   // rotasyonu tetikle
+            log.Info("reopen-hatasindan-sonra");
+        }
 
+        Assert.True(calls >= 3, $"reopen hic denenmemis, factory cagri sayisi: {calls}");
         string all = string.Join("\n", Directory.GetFiles(_dir).Select(File.ReadAllText));
-        Assert.Contains("rotasyondan-sonra", all);
+        Assert.Contains("reopen-hatasindan-sonra", all);
     }
 
     [Fact]
