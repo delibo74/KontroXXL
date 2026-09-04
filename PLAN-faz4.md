@@ -251,7 +251,14 @@ damgası (uyuşmazlık riskini bu azaltır, sıfırlamaz).
 
 ---
 
-## 5. F4-3 — Nasıl release çıkılır (Task 7'nin kalanı)
+## 5. F4-3 — Release — ✅ v2.2.0 YAYINLANDI (2026-09-04 04:42)
+
+> **Yayın:** https://github.com/delibo74/KontroXXL/releases/tag/v2.2.0
+> Etiket `v2.2.0` · hedef `faz2-kurulum` @ `d403f42` · **draft=false · prerelease=false**
+> · **6 varlığın hepsi** `state: uploaded`. Depo D3 kararıyla **PUBLIC** yapıldı.
+> §5.2'deki üç sessiz başarısızlığın üçü de ölçülerek elendi (aşağıda §5.3').
+> Yayınlanan paket F4-1 + F4-2 içerir (`2.2.0+d507f08`).
+
 
 `UpdateFeedUrl` doldu; **hiç release yayınlanmadığı için** güncelleme denetimi bugün
 "güncelsiniz" demez, kaynağı boş bulup hata döner. Aşağıdaki akış bunu kapatır.
@@ -304,18 +311,36 @@ gh release create v2.2.0 (Get-ChildItem releases\* | ForEach-Object { $_.FullNam
 **Alternatif:** `vpk upload github --repoUrl ... --token ...` aynı işi yapar ve varlık
 adlarını kendi seçer. `gh` tercih edildi: ne yüklendiği görülür ve `gh` zaten authed.
 
-### 5.3 Yayından sonra doğrulama (spec §8'in borçlu maddeleri)
+### 5.3 Yayından sonra doğrulama — kısmen ödendi (2026-09-04)
 
-Bunlar **hâlâ ödenmedi** (`HANDOFF.md`: "bu makinede kurulum YAPILMADI"):
+Ölçüm, tahmin değil. Her satırın yanında nasıl kanıtlandığı yazıyor.
 
-1. Temiz makinede `Setup.exe` → kurulum açılıyor mu (.NET 8 Desktop runtime bootstrap)
-2. Tepside uygulama görünüyor, LCD bağlanıyor mu
-3. `Directory.Build.props` 2.2.1 → `pack.ps1` → ikinci release → kurulu kopyada
-   **"Güncellemeleri Denetle" gerçekten güncelliyor mu** — `UpdateFeedUrl`'ün ilk canlı sınavı
-4. Kaldırma sonrası `%APPDATA%\KontroXXL` kalıyor mu (belgelenen davranış)
-5. SmartScreen uyarısı: paket **imzasız** — beklenen, `README.md`'de yazılı
+| # | Madde | Durum | Kanıt |
+|---|---|---|---|
+| 1 | `Setup.exe` → kurulum, .NET 8 bootstrap | ✅ **ÖDENDİ** | `%LOCALAPPDATA%\KontroXXL` kuruldu (04:25:55): `current\`, `packages\`, `Update.exe`, `.velopack_lock`, `sq.version`. Kurulu sürüm `2.2.0+d507f08`. Başlat menüsü kısayolu 04:25:57. Kurulu exe elle çalıştırıldı → **exit code 0**, crash log yok |
+| 2 | Tepside görünüyor, LCD bağlanıyor | ⚠️ **YAPILAMADI** | Makinede `Release_v2\` altından ESKİ bir kopya (ProductVersion 1.0.0) çalışıyor ve tek-örnek mutex'ini tutuyor (`OpenExisting` ile ölçüldü). Kurulu 2.2.0 mutex'te **sessizce** çıkıyor (`Program.cs:63` → `return`). Çalışan uygulamayı kapatmak kullanıcının kararı |
+| 3 | Güncelleme denetimi feed'i okuyabiliyor mu | ✅ **ÖDENDİ** (GUI dışı) | Aşağıda |
+| 4 | Kaldırma sonrası `%APPDATA%\KontroXXL` kalıyor mu | ⏳ ödenmedi | kaldırma denenmedi |
+| 5 | SmartScreen uyarısı (imzasız paket) | ⏳ gözlenmedi | `vpk` "1 file(s) will not be signed" uyardı; beklenen |
 
-Bu beş adım yapılmadan Faz 4 "bitti" denemez.
+**Madde 3 — güncelleme zincirinin canlı sınavı, dört bağımsız ölçüm:**
+
+1. **Anonim GitHub API** (`GithubSource`'un çağırdığı uç): HTTP **200**, 1 release,
+   `draft=False`, `prerelease=False`, **6 varlık**. Token kullanılmadı.
+2. **Anonim feed indirme** — `releases.win.json` HTTP 200 ve yerel dosyayla **birebir aynı**.
+3. **Anonim paket indirme** — `KontroXXL-2.2.0-full.nupkg` HTTP **206** (range) ile iniyor.
+4. **Uygulamanın kendi kod yolu** — `new GithubSource(url, null, false)` (yani
+   `TrayApplicationContext.cs:279`'un birebir aynısı) `GetReleaseFeed` ile sorgulandı:
+   **feed okundu**, sürüm `2.2.0`, `SHA256=16C450FF…EEDFE0`. Bu hash hem yayınlanan
+   varlığın hem `%LOCALAPPDATA%\KontroXXL\packages\` içindeki kurulu paketin hash'iyle
+   **eşleşiyor** — feed, yayın ve kurulum aynı baytı gösteriyor.
+
+`UpdateManager.CheckForUpdatesAsync()` doğrudan denendi ve `NotInstalledException`
+verdi; bu **beklenen** — kurulu olmayan bir bağlamda çağrıldı ve uygulama bu durumu
+zaten ele alıyor (`if (!mgr.IsInstalled)`). Bu yüzden kaynak nesnesi doğrudan sorgulandı.
+
+**Kalan borç:** GUI'den "Güncellemeleri Denetle" tıklaması ve 2.2.1 ile ikinci tur
+güncelleme. İkisi de çalışan eski kopyanın kapatılmasını gerektiriyor — kullanıcı kararı.
 
 ---
 
