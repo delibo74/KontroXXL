@@ -233,9 +233,12 @@ namespace KontroXXL_WinApp
             form.OnSettingsSaved += () => Reload();
         }
 
-        // Task 7'de gercek depo adresiyle doldurulacak. Bos oldugu surece guncelleme
-        // menusu kullaniciya bunu ACIKCA soyler — sessizce hicbir sey yapmaz.
-        private const string UpdateFeedUrl = "";
+        // Velopack GithubSource'un bekledigi sey DEPO adresidir, releases sayfasi ya da
+        // atom/JSON feed'i DEGIL: kendisi bundan api.github.com tabanini turetiyor.
+        // ".../releases" ya da ".git" ekli bir deger verilirse API cagrisi 404 doner.
+        // Depo public (Task 7); accessToken null geciliyor, prerelease kapali.
+        // Bos birakilirsa guncelleme menusu bunu ACIKCA soyler — sessizce gecmez.
+        private const string UpdateFeedUrl = "https://github.com/delibo74/KontroXXL";
 
         // Menu ogesi tekrar tekrar tiklanabilir; indirme suruyorken ikinci bir
         // UpdateManager acmak ayni dosyalari ustuste yazardi. Yalnizca UI thread'inden
