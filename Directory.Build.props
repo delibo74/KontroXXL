@@ -6,7 +6,7 @@
          surum yazma. Not: buraya bir on-surum eki (-beta) eklenirse
          AssemblyVersion/FileVersion derlenmez — o durumda asagidaki iki satiri
          VersionPrefix'e baglamak gerekir. -->
-    <Version>2.2.1</Version>
+    <Version>2.2.2</Version>
     <AssemblyVersion>$(Version)</AssemblyVersion>
     <FileVersion>$(Version)</FileVersion>
     <InformationalVersion>$(Version)</InformationalVersion>
