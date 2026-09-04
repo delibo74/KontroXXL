@@ -43,6 +43,20 @@ namespace KontroXXL_WinApp
         [JsonIgnore] public bool SecretUnreadable { get; private set; }
 
         public bool EnableNasModule { get; set; } = true;
+
+        // F4-1: NAS'ta yeni bir uyari dogdugunda Windows tepsi balonu.
+        // Faz 2 oncesi dosyalarda alan yok -> null; varsayilan ACIK.
+        [JsonProperty("NotifyOnNasAlerts")]
+        public bool? NotifyOnNasAlertsRaw { get; set; }
+
+        /// <summary>Tuketiciler icin non-null gorunum. Varsayilan: bildirim acik.</summary>
+        [JsonIgnore]
+        public bool NotifyOnNasAlerts
+        {
+            get => NotifyOnNasAlertsRaw ?? true;
+            set => NotifyOnNasAlertsRaw = value;
+        }
+
         public bool EnableArduinoModule { get; set; } = true;
         public bool EnableShortcutsModule { get; set; } = true;
 

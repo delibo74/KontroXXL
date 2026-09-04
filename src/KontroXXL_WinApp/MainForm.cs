@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
@@ -213,6 +213,7 @@ namespace KontroXXL_WinApp
         private ComboBox cmbComPort;
         private CheckBox chkAutoDetectPort;
         private CheckBox chkEnableNas, chkEnableArduino, chkEnableShortcuts, chkStartWithWindows;
+        private CheckBox chkNotifyNasAlerts;
         private ListBox lstShortcuts;
 
         private string lastPoolSig = "", lastAlertSig = "", lastSvcSig = "", lastAppSig = "";
@@ -456,6 +457,15 @@ namespace KontroXXL_WinApp
             // Wrap in a dummy button for color tracking
             var dummy = new Button() { Tag = new object[] { btnPanel, accentBar, txtLbl } };
             tabButtons[k] = dummy;
+        }
+
+        /// <summary>
+        /// F4-1: tepsi balonuna tiklandiginda NAS sekmesine gecis. SwitchTab private
+        /// kalsin diye disariya yalnizca bu tek hedef aciliyor.
+        /// </summary>
+        public void ShowNasTab() {
+            if (IsDisposed) return;
+            SwitchTab("NasDashboard");
         }
 
         private void SwitchTab(string k) {
@@ -848,6 +858,7 @@ namespace KontroXXL_WinApp
             chkEnableNas       = CreateCh("NAS İzleme Aktif",       0, y, p); y += 32;
             chkEnableArduino   = CreateCh("Arduino Senkronizasyon", 0, y, p); y += 32;
             chkEnableShortcuts = CreateCh("Hızlı Eylemler Aktif",   0, y, p); y += 32;
+            chkNotifyNasAlerts = CreateCh("NAS uyarılarını bildir (tepsi balonu)", 0, y, p); y += 32;
             chkStartWithWindows = CreateCh("Windows ile Başlat",    0, y, p); y += 52;
 
             ModernButton bS = new ModernButton() {
@@ -1108,6 +1119,7 @@ namespace KontroXXL_WinApp
             chkEnableNas.Checked       = config.EnableNasModule;
             chkEnableArduino.Checked   = config.EnableArduinoModule;
             chkEnableShortcuts.Checked = config.EnableShortcutsModule;
+            chkNotifyNasAlerts.Checked = config.NotifyOnNasAlerts;
             chkStartWithWindows.Checked = IsSt();
         }
 
@@ -1148,6 +1160,7 @@ namespace KontroXXL_WinApp
                 config.EnableNasModule       = chkEnableNas.Checked;
                 config.EnableArduinoModule   = chkEnableArduino.Checked;
                 config.EnableShortcutsModule = chkEnableShortcuts.Checked;
+                config.NotifyOnNasAlerts     = chkNotifyNasAlerts.Checked;
             }
             St(chkStartWithWindows.Checked);
 

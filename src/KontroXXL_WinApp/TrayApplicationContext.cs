@@ -65,8 +65,11 @@ namespace KontroXXL_WinApp
         private ILog log = NullLog.Instance;
         private JArray lastSvcsArr = new JArray();
 
-        // LCD alert ticker
-        private int _prevNasAlertCount = 0;
+        // LCD alert ticker + tepsi balonu (F4-1).
+        // Sayac YOK: karar AlertNotificationPolicy'de, kimlik kumesi uzerinden veriliyor.
+        // Bu alan yalnizca NAS poll thread'inden okunup yazilir (tek yazar).
+        private AlertNotificationState _alertState = AlertNotificationState.Initial;
+        private readonly AlertNotificationOptions _alertOptions = new AlertNotificationOptions();
         private string _lcdTickerText = "";
         private DateTime _lcdTickerUntil = DateTime.MinValue;
         private int _tickerScrollIdx = 0;
@@ -155,6 +158,8 @@ namespace KontroXXL_WinApp
                     Visible = true 
                 };
                 trayIcon.DoubleClick += (s, e) => ShowMainForm();
+                // F4-1: balona tiklayan kullanici alarmi gormek istiyor, dashboard'u degil.
+                trayIcon.BalloonTipClicked += (s, e) => { ShowMainForm(); mainForm.ShowNasTab(); };
 
                 // A8: v2'de tek 500ms timer her tick'te 8 TrueNAS isteği tetikliyordu.
                 // Artık üç bağımsız periyot, hepsi config.json'dan ayarlanabilir.
@@ -729,21 +734,76 @@ namespace KontroXXL_WinApp
                 lastSvcsArr = svcsArr;
                 if (!mainForm.IsDisposed) mainForm.UpdateNasStats(nc, nrx, ntx, nl, nt, poolArr, appsList, alertsArr, uptime, memory, svcsArr);
 
-                // Alert ticker: trigger LCD scrolling notification when new alerts arrive
-                if (na > _prevNasAlertCount && na > 0)
+                // F4-1: yeni alarm karari. Eski "na > _prevNasAlertCount" testi sayi
+                // tabanliydi (takas edilen alarmi kaciriyordu), level'i hic okumuyordu
+                // ve her acilista mevcut alarmlari "yeni" sayiyordu — ucu de politikada
+                // kapandi. Burada yalnizca gosterim var.
+                var decision = AlertNotificationPolicy.Decide(
+                    _alertState, ToNasAlerts(alertsArr), _alertOptions, DateTimeOffset.Now);
+                _alertState = decision.NextState;
+
+                if (decision.ShouldNotify)
                 {
-                    int count = na;
+                    int count = decision.NewAlertCount;
+                    string balloonTitle = decision.Title;
+                    string balloonBody = decision.Body;
+                    bool balloonEnabled = config.NotifyOnNasAlerts;
+
                     RunOnUi(() => {
-                        _lcdTickerText = $"! YENI ALARM: {count} uyari aktif !  ";
+                        // LCD yolu Sanitize'li kalir (7 bit ekran), balon Unicode tasir.
+                        _lcdTickerText = $"! YENI ALARM: {count} uyari !  ";
                         _lcdTickerUntil = DateTime.Now.AddSeconds(10);
                         _tickerScrollIdx = 0;
+
+                        if (balloonEnabled && trayIcon != null && trayIcon.Visible)
+                        {
+                            try
+                            {
+                                trayIcon.BalloonTipIcon = ToolTipIcon.Warning;
+                                trayIcon.BalloonTipTitle = balloonTitle;
+                                trayIcon.BalloonTipText = balloonBody;
+                                trayIcon.ShowBalloonTip(10000);
+                                // Spec 9: Win10/11 balonu toast'a yonlendirir ve kullanicinin
+                                // "bildirimleri kapat" ayari onu SESSIZCE yutabilir. Gonderdigimizi
+                                // log'a yazmazsak "bildirim gelmedi" sikayeti teshis edilemez.
+                                log.Info($"Tepsi balonu gonderildi: {count} yeni uyari.");
+                            }
+                            catch (Exception bex) { log.Error("Tepsi balonu gosterilemedi", bex); }
+                        }
                     });
+
                     log.Info($"LCD ticker tetiklendi: {count} yeni uyari.");
                 }
-                _prevNasAlertCount = na;
 
                 return (nc, nrx, ntx, nl, nt, na, uptime, memory, svcsArr, true, poolArr, alertsArr);
             } catch (Exception ex) { Log("GetTruenasData error: " + ex.Message); return (0,0,0,0,0,0, "","", new JArray(), false, new JArray(), new JArray()); }
+        }
+
+        /// <summary>
+        /// F4-1: TrueNAS <c>alert/list</c> ogelerini Core'un tanidigi sade kayda cevirir.
+        /// Core'un Newtonsoft referansi yok (ArchitectureTests'teki katmanlama), donusum
+        /// bu yuzden UI tarafinda. Tek bir bozuk oge tum tick'i dusurmemeli — her alan
+        /// ayri ayri savunuluyor.
+        /// </summary>
+        private static IReadOnlyList<NasAlert> ToNasAlerts(JArray alerts)
+        {
+            var list = new List<NasAlert>();
+            if (alerts == null) return list;
+
+            foreach (var a in alerts)
+            {
+                try
+                {
+                    string id = (string)a["id"];
+                    string level = (string)a["level"];
+                    // TrueNAS'ta gosterilecek metin "formatted"; eski/kisitli yanitlarda
+                    // "text", o da yoksa alarm sinifi ("klass") hic yoktan iyidir.
+                    string text = (string)(a["formatted"] ?? a["text"] ?? a["klass"]);
+                    list.Add(new NasAlert(id, level, text));
+                }
+                catch { /* tek oge okunamadi; digerleri islenmeye devam etsin */ }
+            }
+            return list;
         }
 
         private async Task NasServiceAction(string service, string action) {
