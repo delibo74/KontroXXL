@@ -508,7 +508,9 @@ namespace KontroXXL_WinApp
 
             // Version badge
             Label ver = new Label() {
-                Text = "v2.0",
+                // Spec 8.9: surum TEK kaynaktan okunur. Burasi "v2.0" olarak
+                // sabit yazilmisti ve 2.2.1 calisirken bile v2.0 gosteriyordu.
+                Text = "v" + AppVersionText,
                 ForeColor = Color.FromArgb(80, 140, 200),
                 Font = new Font("Segoe UI Semibold", 8),
                 Location = new Point(120, 18),
@@ -710,6 +712,23 @@ namespace KontroXXL_WinApp
                 Margin = new Padding(0, 0, 0, 6)
             };
 
+        /// <summary>
+        /// Bolumleri GORULMESI istenen sirayla (ustten alta) ust uste yigar.
+        /// </summary>
+        /// <remarks>
+        /// WinForms ayni ebeveyne eklenen Dock.Top kontrolleri ekleme sirasinin TERSINE
+        /// yigar: en son eklenen en ustte durur. Cagiran taraf bunu her seferinde
+        /// dusunmek zorunda kalmasin diye donusum tek bir yerde, Core'daki
+        /// DockTopStack'te (birim testli) yapiliyor. 2026-09-04'te NAS Dashboard ve
+        /// NAS Apps sayfalari tam bu kural atlandigi icin ters gorunuyordu.
+        /// </remarks>
+        private static void AddStackedTop(Control host, params Control[] topToBottom) {
+            foreach (Control c in DockTopStack.ToInsertionOrder(topToBottom)) {
+                c.Dock = DockStyle.Top;
+                host.Controls.Add(c);
+            }
+        }
+
         private void SetupDashboardTab() {
             Panel p = new NoScrollPanel() { Dock = DockStyle.Fill, Visible = false, AutoScroll = true };
             ApplyCustomScroll(p, "Dashboard");
@@ -767,8 +786,8 @@ namespace KontroXXL_WinApp
 
             // pNet added first (lower index), fDonuts second (higher index).
             // WinForms docks in reverse-index order: fDonuts goes to top, pNet below it.
-            p.Controls.Add(pNet);
-            p.Controls.Add(fDonuts);
+            // Gorsel sira: once donut'lar, altinda ag grafikleri.
+            AddStackedTop(p, fDonuts, pNet);
             contentContainer.Controls.Add(p);
             tabPanels["Dashboard"] = p;
         }
@@ -834,7 +853,6 @@ namespace KontroXXL_WinApp
             fTop.Controls.Add(dntNasCpu);
             fTop.Controls.Add(dntNasTemp);
             fTop.Controls.Add(pInfo);
-            p.Controls.Add(fTop);
 
             // Sections stacked in a FlowLayoutPanel (TopDown) to prevent overlap.
             // Dock.Top + AutoSize lets it grow vertically so the parent NoScrollPanel can scroll.
@@ -904,7 +922,10 @@ namespace KontroXXL_WinApp
             };
             fSections.Controls.Add(flowNasServices);
 
-            p.Controls.Add(fSections);
+            // Gorsel sira: ustte NAS ozeti (donut'lar + REBOOT/SHUTDOWN), altinda
+            // havuz/uyari/servis bolumleri. Eskiden fTop once, fSections sonra
+            // ekleniyordu ve Dock.Top tersligi yuzunden sayfa BASASAGI goruluyordu.
+            AddStackedTop(p, fTop, fSections);
             contentContainer.Controls.Add(p);
             tabPanels["NasDashboard"] = p;
         }
@@ -921,7 +942,6 @@ namespace KontroXXL_WinApp
                 Location = new Point(0, 10),
                 AutoSize = true
             });
-            p.Controls.Add(hdr);
 
             flowRealApps = new FlowLayoutPanel() {
                 Dock = DockStyle.Top,
@@ -933,7 +953,9 @@ namespace KontroXXL_WinApp
                 WrapContents = false,
                 BackColor = Color.FromArgb(15, 15, 20)
             };
-            p.Controls.Add(flowRealApps);
+            // Gorsel sira: ustte "MANAGED APPLICATIONS" basligi, altinda uygulama listesi.
+            // Eskiden baslik once eklendigi icin Dock.Top tersligiyle listenin ALTINA dusuyordu.
+            AddStackedTop(p, hdr, flowRealApps);
             contentContainer.Controls.Add(p);
             tabPanels["NasApps"] = p;
         }
