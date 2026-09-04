@@ -19,6 +19,7 @@ using KontroXXL.Core.Logging;
 using KontroXXL.Core.Lcd;
 using KontroXXL.Core.Configuration;
 using KontroXXL.Core.Diagnostics;
+using KontroXXL.Core.Security;
 
 namespace KontroXXL_WinApp
 {
@@ -70,6 +71,11 @@ namespace KontroXXL_WinApp
         // Bu alan yalnizca NAS poll thread'inden okunup yazilir (tek yazar).
         private AlertNotificationState _alertState = AlertNotificationState.Initial;
         private readonly AlertNotificationOptions _alertOptions = new AlertNotificationOptions();
+        // F4-5: NAS anahtarinin son degerlendirmesi. NAS istekleri ve tepsi ipucu
+        // bundan turetilir; anahtar bozuksa NAS modulu KENDI icinde susar, uygulama yasar.
+        private bool nasKeyUsable;
+        private string nasKeyMessage = "";
+
         private string _lcdTickerText = "";
         private DateTime _lcdTickerUntil = DateTime.MinValue;
         private int _tickerScrollIdx = 0;
@@ -113,8 +119,18 @@ namespace KontroXXL_WinApp
                     }
                 };
                 httpClient = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5) };
-                if (!string.IsNullOrEmpty(config.TruenasApiKey))
-                    httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", config.TruenasApiKey);
+
+                // F4-5: NAS istemcisinin kurulumu KENDI icinde yasar. 2026-09-04'te
+                // buradaki tek bir istisna (anahtarda satir sonu) butun kurucuyu
+                // dusurmustu; tepsi ikonu, LCD ve Ayarlar da acilmamisti. Artik NAS
+                // tarafi ne yaparsa yapsin uygulama ayaga kalkar.
+                try { ApplyApiKey(); }
+                catch (Exception ex)
+                {
+                    nasKeyUsable = false;
+                    nasKeyMessage = ApiKeyPolicy.UnusableMessage;
+                    log.Error("NAS modulu devre disi (API anahtari uygulanamadi)", ex);
+                }
 
                 audioController = new CoreAudioController();
                 try { cpuActualFreqCounter = new PerformanceCounter("Processor Information", "Actual Frequency", "_Total"); } catch { }
@@ -160,6 +176,7 @@ namespace KontroXXL_WinApp
                 trayIcon.DoubleClick += (s, e) => ShowMainForm();
                 // F4-1: balona tiklayan kullanici alarmi gormek istiyor, dashboard'u degil.
                 trayIcon.BalloonTipClicked += (s, e) => { ShowMainForm(); mainForm.ShowNasTab(); };
+                UpdateTrayText();
 
                 // A8: v2'de tek 500ms timer her tick'te 8 TrueNAS isteği tetikliyordu.
                 // Artık üç bağımsız periyot, hepsi config.json'dan ayarlanabilir.
@@ -185,7 +202,9 @@ namespace KontroXXL_WinApp
 
                 nasTimer = new System.Windows.Forms.Timer { Interval = Math.Max(1000, config.NasIntervalMs) };
                 nasTimer.Tick += (s, e) => {
-                    if (isNasUpdating || !config.EnableNasModule || string.IsNullOrEmpty(config.TruenasIp)) return;
+                    // Anahtar yoksa/bozuksa istek atmiyoruz: eskiden bu durum sessiz bir
+                    // 401 dongusune donusuyordu (04:27 loglari). Durum tepsi ipucunda yazili.
+                    if (isNasUpdating || !config.EnableNasModule || !nasKeyUsable || string.IsNullOrEmpty(config.TruenasIp)) return;
                     isNasUpdating = true;
                     Task.Run(async () => {
                         try { await UpdateNasTelemetry(); }
@@ -208,6 +227,58 @@ namespace KontroXXL_WinApp
             catch (Exception ex)
             {
                 Log("KRITIK HATA: " + ex.Message);
+                StartSafeMode(ex);
+            }
+        }
+
+        /// <summary>
+        /// Kurucu yarida kaldiginda kullaniciyi ORTADA BIRAKMAYAN son care.
+        /// </summary>
+        /// <remarks>
+        /// 2026-09-04: kurucu "KRITIK HATA" yazip sessizce bitiyordu; geriye tepsi ikonu
+        /// olmayan, penceresi olmayan, ama yasayan bir surec kaliyordu — kullanici
+        /// Ayarlar'a ulasip bozuk degeri duzeltemiyordu bile. Artik en azindan bir tepsi
+        /// ikonu ve Ayarlar/Cikis yolu birakiyoruz. Buradaki her adim ayri korunuyor:
+        /// kurtarma denemesi kendisi yeni bir istisna uretmemeli.
+        /// </remarks>
+        private void StartSafeMode(Exception cause)
+        {
+            try
+            {
+                if (mainForm == null && config != null)
+                {
+                    try
+                    {
+                        mainForm = new MainForm(config);
+                        mainForm.Secrets = secrets;
+                        _ = mainForm.Handle;
+                    }
+                    catch (Exception ex) { log.Error("Guvenli mod: pencere acilamadi", ex); }
+                }
+
+                var cms = new ContextMenuStrip();
+                if (mainForm != null) cms.Items.Add("Ayarlari Ac", null, (s, e) => { try { ShowMainForm(); } catch { } });
+                cms.Items.Add("Cikis", null, (s, e) => { try { trayIcon.Visible = false; } catch { } Application.Exit(); });
+
+                if (trayIcon == null)
+                {
+                    trayIcon = new NotifyIcon { Icon = CreateIcon(), Visible = true };
+                    if (mainForm != null) trayIcon.DoubleClick += (s, e) => { try { ShowMainForm(); } catch { } };
+                }
+                trayIcon.ContextMenuStrip = cms;
+                trayIcon.Text = "KontroXXL — guvenli mod (Ayarlar)";
+                trayIcon.Visible = true;
+
+                trayIcon.BalloonTipTitle = "KontroXXL guvenli modda";
+                trayIcon.BalloonTipText = "Baslangic tamamlanamadi: " + cause.Message +
+                    "\nAyarlari acip degerleri duzeltin.";
+                trayIcon.ShowBalloonTip(10000);
+
+                Log("Guvenli mod: tepsi ikonu ve Ayarlar erisilebilir.");
+            }
+            catch (Exception ex)
+            {
+                Log("Guvenli mod da kurulamadi: " + ex.Message);
             }
         }
 
@@ -353,14 +424,53 @@ namespace KontroXXL_WinApp
             mainForm.BringToFront();
         }
 
+        /// <summary>
+        /// config'teki anahtari normalize edip Authorization basligina uygular.
+        /// ATMAZ: gecersiz bir anahtar yalnizca NAS modulunu susturur.
+        /// </summary>
+        private void ApplyApiKey()
+        {
+            var evaluation = ApiKeyPolicy.Evaluate(config.TruenasApiKey);
+
+            // Onarilmis anahtari bellege de geri yaz: bir daha ayni degeri her
+            // aciliste temizlemek zorunda kalmayalim, kaydedildiginde duzelmis olsun.
+            if (evaluation.Status == ApiKeyStatus.Repaired)
+            {
+                lock (config.SyncRoot) { config.TruenasApiKey = evaluation.Key; }
+                config.MarkDirty();
+            }
+
+            nasKeyUsable = evaluation.IsUsable;
+            nasKeyMessage = evaluation.Message;
+
+            httpClient.DefaultRequestHeaders.Authorization = evaluation.IsUsable
+                ? new AuthenticationHeaderValue("Bearer", evaluation.Key)
+                : null;
+
+            if (evaluation.Message.Length > 0) log.Info(evaluation.Message);
+            UpdateTrayText();
+        }
+
+        /// <summary>Tepsi ipucu: NAS anahtari yok/bozuksa kullanici bunu GORSUN.</summary>
+        private void UpdateTrayText()
+        {
+            if (trayIcon == null) return;
+            try
+            {
+                // NotifyIcon.Text 63 karakterle sinirli; asilirsa ArgumentException atar.
+                string text = (config.EnableNasModule && !nasKeyUsable)
+                    ? "KontroXXL — NAS anahtari yok/gecersiz (Ayarlar)"
+                    : "KontroXXL Tactical Dashboard";
+                trayIcon.Text = text.Length > 63 ? text.Substring(0, 63) : text;
+            }
+            catch { }
+        }
+
         private void Reload()
         {
             Log("Ayarlar yeniden yukleniyor...");
             try {
-                if (!string.IsNullOrEmpty(config.TruenasApiKey))
-                    httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", config.TruenasApiKey);
-                else
-                    httpClient.DefaultRequestHeaders.Authorization = null;
+                ApplyApiKey();
 
                 serial?.Dispose();
                 serial = null;

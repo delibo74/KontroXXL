@@ -11,6 +11,7 @@ using Microsoft.Win32;
 using System.Runtime.InteropServices;
 using KontroXXL.Core.Diagnostics;
 using KontroXXL.Core.Layout;
+using KontroXXL.Core.Security;
 
 namespace KontroXXL_WinApp
 {
@@ -232,6 +233,7 @@ namespace KontroXXL_WinApp
 
         private TextBox txtNasIp, txtNasKey;
         private Label lblSecretWarning;
+        private Label lblNasKeyWarning;
         private ComboBox cmbComPort;
         private CheckBox chkAutoDetectPort;
         private CheckBox chkEnableNas, chkEnableArduino, chkEnableShortcuts, chkStartWithWindows;
@@ -1041,6 +1043,18 @@ namespace KontroXXL_WinApp
             };
             p.Controls.Add(lblSecretWarning); y += 24;
 
+            // F4-5: anahtar bos ya da baslik degeri olamayacak karakter iceriyorsa
+            // NAS modulu susuyor. Kullanici bunu sessizce degil, BURADA gormeli.
+            lblNasKeyWarning = new Label() {
+                Location = new Point(0, y),
+                AutoSize = true,
+                MaximumSize = new Size(420, 0),
+                ForeColor = Color.Tomato,
+                Font = new Font("Segoe UI Semibold", 8),
+                Visible = false
+            };
+            p.Controls.Add(lblNasKeyWarning); y += 30;
+
             // Arduino section
             p.Controls.Add(new Label() { Text = "— Arduino Bağlantısı —", Font = new Font("Segoe UI Semibold", 9), ForeColor = Color.FromArgb(100, 140, 200), Location = new Point(0, y), AutoSize = true }); y += 28;
             p.Controls.Add(new Label() { Text = "Serial COM Port:", Location = new Point(0, y), AutoSize = true, ForeColor = Color.Silver }); y += 22;
@@ -1323,6 +1337,7 @@ namespace KontroXXL_WinApp
             txtNasIp.Text   = config.TruenasIp;
             txtNasKey.Text  = config.TruenasApiKey;
             lblSecretWarning.Visible = config.SecretUnreadable;
+            RefreshNasKeyWarning(config.TruenasApiKey);
             cmbComPort.Text = config.ArduinoPort;
             chkAutoDetectPort.Checked = config.AutoDetectPort;
             cmbComPort.Enabled = !chkAutoDetectPort.Checked;
@@ -1334,13 +1349,30 @@ namespace KontroXXL_WinApp
         }
 
         private void SaveConfig() {
+            // F4-5: anahtari HER SEYDEN once temizle. Yapistirmadan gelen satir sonu
+            // 2026-09-04'te uygulamanin hic acilmamasina yol acmisti; artik bozuk deger
+            // ne diske ne de HTTP basligina ulasiyor.
+            var keyEval = ApiKeyPolicy.Evaluate(txtNasKey.Text);
+            RefreshNasKeyWarning(txtNasKey.Text);
+            if (keyEval.Status == ApiKeyStatus.Unusable)
+            {
+                MessageBox.Show(
+                    ApiKeyPolicy.UnusableMessage + "\n\n" +
+                    "Kayitli anahtar korundu, degisiklik uygulanmadi.",
+                    "KontroXXL", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            // Temizlenmis hali kullaniciya da geri yaz: alandaki deger ile kaydedilen
+            // deger ayni olsun.
+            if (txtNasKey.Text != keyEval.Key) txtNasKey.Text = keyEval.Key;
+
             // Once sirri isle. Telemetri config'i surekli kirli tuttugu icin, buradan
             // sonra yapilan HER atama 30 saniyelik flush timer'iyla diske iner —
             // "hicbir sey yazilmadi" garantisi ancak atamalardan ONCE cikarsak dogru olur.
             if (Secrets != null)
             {
                 string previousKey = config.TruenasApiKey;
-                config.TruenasApiKey = txtNasKey.Text;
+                config.TruenasApiKey = keyEval.Key;
 
                 if (config.ApplyProtection(Secrets) == SecretApplyResult.Failed)
                 {
@@ -1354,7 +1386,7 @@ namespace KontroXXL_WinApp
             }
             else
             {
-                config.TruenasApiKey = txtNasKey.Text;
+                config.TruenasApiKey = keyEval.Key;
             }
 
             // Buradan itibaren kalici degisiklikler. Diger her yazar SyncRoot altinda
@@ -1385,8 +1417,19 @@ namespace KontroXXL_WinApp
             // Etiket her zaman config.SecretUnreadable'dan turetilir — UI-yerel bir
             // override tutmuyoruz, boylece form yeniden olusturulsa bile dogru kalir.
             lblSecretWarning.Visible = config.SecretUnreadable;
+            RefreshNasKeyWarning(config.TruenasApiKey);
             OnSettingsSaved?.Invoke();
             MessageBox.Show("Yapılandırma başarıyla kaydedildi.", "KontroXXL", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        /// <summary>NAS anahtarinin durumunu Ayarlar'da gorunur kilar.</summary>
+        private void RefreshNasKeyWarning(string rawKey) {
+            if (lblNasKeyWarning == null) return;
+            var e = ApiKeyPolicy.Evaluate(rawKey);
+            // Cozulemeyen blob'un kendi uyarisi var; ikisini ust uste yazmayalim.
+            bool show = !e.IsUsable && !config.SecretUnreadable;
+            lblNasKeyWarning.Text = show ? "\u26a0 " + e.Message : "";
+            lblNasKeyWarning.Visible = show;
         }
 
         private void AddShortcutDialog() {
