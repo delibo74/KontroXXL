@@ -18,8 +18,10 @@
 
 - [ ] **NAS Alert Bildirimleri (Faz 4):** Kritik TrueNAS alertlerini Windows tray bildirimi olarak yansıtma. Bugün LCD ticker'ı var (`_lcdTickerText`, yeni alarmda 10 sn kayan yazı) ama Windows tray balonu yok.
 - [x] **Config Şifreleme (Faz 2 — tamamlandı):** API anahtarı DPAPI ile şifreleniyor (`TruenasApiKeyProtected`); mevcut düz metin anahtar ilk açılışta bir kez göç ettiriliyor. Çözülemezse Ayarlar'da uyarı çıkar.
-- [x] **Versiyon Kontrolü (Faz 2 — tamamlandı):** Velopack entegre; tray → "Güncellemeleri Denetle", `installer/pack.ps1` kurulum paketi üretiyor. **Açık:** `UpdateFeedUrl` sabiti Task 7'de (GitHub deposu) doldurulacak; o zamana kadar menü "kaynak yapılandırılmamış" der.
+- [x] **Versiyon Kontrolü (Faz 2 — tamamlandı):** Velopack entegre; tray → "Güncellemeleri Denetle", `installer/pack.ps1` kurulum paketi üretiyor. `UpdateFeedUrl` Task 7'de dolduruldu (`https://github.com/delibo74/KontroXXL`). **Açık:** henüz hiç GitHub Release yayınlanmadı — release akışı `PLAN-faz4.md` §5'te.
 - [ ] **Dashboard Yeniden Boyutlandırma (Faz 4 — Avalonia):** Yukarıdaki "Otomatik Dashboard" maddesiyle aynı iş; WinForms'ta pencere kilitli kalacak, çözüm Avalonia geçişiyle geliyor.
 
 ---
 **Teknik Not:** Uygulama `net8.0-windows` üzerinde framework-bağımlı olarak derlenir (`installer/publish.ps1`) ve Velopack ile paketlenir. Loglar artık `%APPDATA%\KontroXXL\app.log` altında.
+
+**Faz 4 planı:** `PLAN-faz4.md` (öncelikler, Avalonia vs WinForms karar analizi, release akışı).

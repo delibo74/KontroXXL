@@ -110,3 +110,33 @@ bu makinede kurulum YAPILMADI, yalnızca paket üretildi.
   ile çelişiyor, karar gerek (`!firmware/*.hex` istisnası mı, repo dışı mı?).
 - Task 7: iki onay kapısı (depo adı/görünürlük, push) + remote push bana kapalı (entegratör god).
   `UpdateFeedUrl` boş kaldığı sürece "Güncellemeleri Denetle" yalnızca bilgi mesajı verir.
+
+## Faz 4 turu — plan + Task 7'nin `UpdateFeedUrl` parcasi (2026-09-04)
+
+- `TrayApplicationContext.cs:238` — `UpdateFeedUrl` artik
+  `https://github.com/delibo74/KontroXXL`. Depo PUBLIC oldugu icin Task 7'nin bu
+  parcasi kapandi. Yorumda **Velopack GithubSource'un DEPO adresi istedigi** yaziyor:
+  `.../releases` ya da `.git` ekli bir deger API tabanini bozar, her denetim 404 doner.
+  Bos-deger korumasi kaldirilmadi. Release derlemesi 0/0, testler **186/186**.
+- **YENI `PLAN-faz4.md`** — Faz 4 plani. Kesiften yazildi, her iddia `dosya:satir`
+  ile: F4-1 tray balonu (Core'da test edilebilir `AlertNotificationPolicy`; mevcut
+  tetigin uc zayif noktasi belgelendi), F4-2 resize (D1), F4-3 ilk release + kurulum
+  dogrulamasi, F4-4 firmware `.hex` (D2).
+- `installer/pack.ps1` bu turda **canli calistirildi**; `releases/` cikti listesi
+  plandaki tabloya olcumle girdi (Setup.exe 7.2 MB, full.nupkg, `releases.win.json`,
+  Portable.zip, `RELEASES`, `assets.win.json`). Release akisi `PLAN-faz4.md` §5.
+
+### god'a birakilan kararlar
+- **D1 (en kritik):** Dashboard resize — (i) Avalonia gecisi ~2-3 hafta / yuksek risk /
+  gorsel kimlik yeniden uretilir / **Avalonia'da tray balonu yok, F4-1'e ek is cikarir**,
+  (ii) WinForms hafif fix A+B ~2 gun / dusuk-orta risk / gorunum degismez / buyuk
+  pencerede sagda-altta bosluk kalir, yuksek DPI cozulmez. Oneri: **(ii)**.
+  Olcumler: MainForm'da **50 mutlak `Location`, 0 `Anchor`**; dis iskelet zaten `Dock`;
+  `LineChart` olcekleniyor ama `DonutProgress` sabit koordinatla ciziyor.
+- **D2:** firmware `.hex` — oneri **repo disi**, GitHub Release varligi olarak
+  (`.gitignore`'daki `*.hex` kurali korunur; `.hex` turetilmis cikti, `.ino` zaten depoda).
+- **D3:** ilk release simdi 2.2.0 ile cikilsin (guncelleme zincirinin canli sinavi erken olsun).
+
+### Bu turda YAPILMAYAN (sinir)
+Avalonia gecisi, resize kodu, tray balonu implementasyonu, `.gitignore` degisikligi,
+GitHub release yayinlama, remote push (entegrator god).
