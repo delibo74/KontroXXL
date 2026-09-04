@@ -26,7 +26,7 @@ Bu plan **keşiften** yazıldı, hafızadan değil: her iddianın yanında `dosy
 
 | # | Kalem | Öncelik | Neden bu sırada |
 |---|---|---|---|
-| F4-1 | NAS kritik alert → Windows tray balonu | **1 (önce)** | Küçük, izole, geri alınabilir; kullanıcıya doğrudan değer; **UI çatısından bağımsız** — D1 hangi yöne giderse gitsin bu kod boşa gitmez (bkz. §2.4) |
+| ~~F4-1~~ ✅ | NAS kritik alert → Windows tray balonu — **TAMAMLANDI** (dal `agent/worker-naslcd-faz4-tray`) | **1 (önce)** | Küçük, izole, geri alınabilir; kullanıcıya doğrudan değer; **UI çatısından bağımsız** — D1 hangi yöne giderse gitsin bu kod boşa gitmez (bkz. §2.4) |
 | F4-2 | Dashboard yeniden boyutlandırma | **2 (D1 kararından sonra)** | Efor aralığı 2 güne karşı 2–3 hafta; yanlış seçim Faz 4'ü tek başına yutar |
 | F4-3 | İlk gerçek GitHub release + kurulum doğrulaması | **1 ile paralel** | Velopack zinciri kod düzeyinde bitti ama **hiç gerçek kurulumla denenmedi** (spec §8.3/8.4/8.5/8.6/8.8 hâlâ borçlu, `HANDOFF.md`) |
 | F4-4 | Task 6 — firmware `.hex` | **karar bekliyor** | Tek satırlık bir `.gitignore` kararı, bkz. §4 |
@@ -36,7 +36,16 @@ F4-2 kendi başına **Faz 5** olmalı; Faz 4'ün içine sığmaz.
 
 ---
 
-## 2. F4-1 — NAS kritik alert → Windows tray bildirimi
+## 2. F4-1 — NAS kritik alert → Windows tray bildirimi — ✅ TAMAMLANDI
+
+> **Durum (2026-09-04):** uygulandı, dal `agent/worker-naslcd-faz4-tray`,
+> commit'ler `4b4f3fc` (Core politikası + 31 test) ve `6fe9d4c` (tepsi/UI teli).
+> §2.2'deki üç zayıf noktanın **üçü de** kapatıldı; §2.3'teki tasarım birebir
+> uygulandı, tek fark: politikanın kısma penceresi alarmları **düşürmüyor**,
+> biriktirip pencere dolunca tek balonda çıkarıyor. Testler 217/217 yeşil,
+> Release derlemesi 0 uyarı / 0 hata. Ayar: `AppConfig.NotifyOnNasAlerts`
+> (varsayılan açık), Ayarlar sekmesinde "NAS uyarılarını bildir (tepsi balonu)".
+
 
 ### 2.1 Bugün ne var
 

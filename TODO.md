@@ -16,7 +16,7 @@
 
 ## 🛠️ GELECEK PLANLARI (TODO)
 
-- [ ] **NAS Alert Bildirimleri (Faz 4):** Kritik TrueNAS alertlerini Windows tray bildirimi olarak yansıtma. Bugün LCD ticker'ı var (`_lcdTickerText`, yeni alarmda 10 sn kayan yazı) ama Windows tray balonu yok.
+- [x] **NAS Alert Bildirimleri (Faz 4 — F4-1 tamamlandı):** Yeni TrueNAS uyarıları artık Windows tepsi balonu olarak da çıkıyor. Karar mantığı Core'da test edilebilir bir politikada: `AlertNotificationPolicy` (kimlik tabanlı takip, `level` eşiği, açılışta taban alma, kısma). Ayarlar → "NAS uyarılarını bildir" ile kapatılabilir; balona tıklamak NAS sekmesini açar.
 - [x] **Config Şifreleme (Faz 2 — tamamlandı):** API anahtarı DPAPI ile şifreleniyor (`TruenasApiKeyProtected`); mevcut düz metin anahtar ilk açılışta bir kez göç ettiriliyor. Çözülemezse Ayarlar'da uyarı çıkar.
 - [x] **Versiyon Kontrolü (Faz 2 — tamamlandı):** Velopack entegre; tray → "Güncellemeleri Denetle", `installer/pack.ps1` kurulum paketi üretiyor. `UpdateFeedUrl` Task 7'de dolduruldu (`https://github.com/delibo74/KontroXXL`). **Açık:** henüz hiç GitHub Release yayınlanmadı — release akışı `PLAN-faz4.md` §5'te.
 - [ ] **Dashboard Yeniden Boyutlandırma (Faz 4 — Avalonia):** Yukarıdaki "Otomatik Dashboard" maddesiyle aynı iş; WinForms'ta pencere kilitli kalacak, çözüm Avalonia geçişiyle geliyor.
