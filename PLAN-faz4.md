@@ -27,7 +27,7 @@ Bu plan **keşiften** yazıldı, hafızadan değil: her iddianın yanında `dosy
 | # | Kalem | Öncelik | Neden bu sırada |
 |---|---|---|---|
 | ~~F4-1~~ ✅ | NAS kritik alert → Windows tray balonu — **TAMAMLANDI** (dal `agent/worker-naslcd-faz4-tray`) | **1 (önce)** | Küçük, izole, geri alınabilir; kullanıcıya doğrudan değer; **UI çatısından bağımsız** — D1 hangi yöne giderse gitsin bu kod boşa gitmez (bkz. §2.4) |
-| F4-2 | Dashboard yeniden boyutlandırma | **2 (D1 kararından sonra)** | Efor aralığı 2 güne karşı 2–3 hafta; yanlış seçim Faz 4'ü tek başına yutar |
+| ~~F4-2~~ ✅ | Dashboard yeniden boyutlandırma — **D1 = (ii) WinForms; A+B+C UYGULANDI** (commit `d507f08`) | **2 (D1 kararından sonra)** | Efor aralığı 2 güne karşı 2–3 hafta; yanlış seçim Faz 4'ü tek başına yutar |
 | F4-3 | İlk gerçek GitHub release + kurulum doğrulaması | **1 ile paralel** | Velopack zinciri kod düzeyinde bitti ama **hiç gerçek kurulumla denenmedi** (spec §8.3/8.4/8.5/8.6/8.8 hâlâ borçlu, `HANDOFF.md`) |
 | F4-4 | Task 6 — firmware `.hex` | **karar bekliyor** | Tek satırlık bir `.gitignore` kararı, bkz. §4 |
 
@@ -100,7 +100,16 @@ başarısızlık olur; log'a "balon gönderildi" satırı düşülmeli (spec §9
 
 ---
 
-## 3. D1 — **EN KRİTİK KARAR:** Dashboard yeniden boyutlandırma
+## 3. D1 — Dashboard yeniden boyutlandırma — ✅ KARAR VERİLDİ: (ii) WinForms
+
+> **Karar (2026-09-04, Karaduman):** seçenek **(ii) hafif WinForms fix**. Avalonia yok.
+> **Uygulandı:** Adım A + B + C, commit `d507f08`, dal `agent/worker-naslcd-faz4-tray`.
+> Adım C de yapıldı: `DonutProgress.OnPaint` artık `ClientSize`'dan hesaplıyor
+> (`Core/Layout/DonutGeometry`), 140x170'te sonuç eski sabitlerle **piksel piksel
+> aynı** ve bu bir testle kilitli — "görsel kimlik değişmedi" iddiası artık ölçülür.
+> Tek piksel düzeyinde sapma: `Form.Padding` 1 → 4 (tutamak bandı; gerekçe §3.3'te).
+> §3.2/§3.3'teki analiz tarihsel kayıt olarak duruyor.
+
 
 ### 3.1 Bugünkü kilit ve nedeni
 

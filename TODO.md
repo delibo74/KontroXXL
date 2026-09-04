@@ -19,7 +19,7 @@
 - [x] **NAS Alert Bildirimleri (Faz 4 — F4-1 tamamlandı):** Yeni TrueNAS uyarıları artık Windows tepsi balonu olarak da çıkıyor. Karar mantığı Core'da test edilebilir bir politikada: `AlertNotificationPolicy` (kimlik tabanlı takip, `level` eşiği, açılışta taban alma, kısma). Ayarlar → "NAS uyarılarını bildir" ile kapatılabilir; balona tıklamak NAS sekmesini açar.
 - [x] **Config Şifreleme (Faz 2 — tamamlandı):** API anahtarı DPAPI ile şifreleniyor (`TruenasApiKeyProtected`); mevcut düz metin anahtar ilk açılışta bir kez göç ettiriliyor. Çözülemezse Ayarlar'da uyarı çıkar.
 - [x] **Versiyon Kontrolü (Faz 2 — tamamlandı):** Velopack entegre; tray → "Güncellemeleri Denetle", `installer/pack.ps1` kurulum paketi üretiyor. `UpdateFeedUrl` Task 7'de dolduruldu (`https://github.com/delibo74/KontroXXL`). **Açık:** henüz hiç GitHub Release yayınlanmadı — release akışı `PLAN-faz4.md` §5'te.
-- [ ] **Dashboard Yeniden Boyutlandırma (Faz 4 — Avalonia):** Yukarıdaki "Otomatik Dashboard" maddesiyle aynı iş; WinForms'ta pencere kilitli kalacak, çözüm Avalonia geçişiyle geliyor.
+- [x] **Dashboard Yeniden Boyutlandırma (Faz 4 — F4-2 tamamlandı):** D1 kararı **(ii) WinForms hafif fix** çıktı, Avalonia'ya geçilmedi. Pencere artık esniyor: kenar/köşe tutamakları (WM_NCHITTEST), Büyüt/Geri Al düğmesi, her Resize'da yeniden üretilen yuvarlak köşe. İçerik de büyüyor (ağ grafikleri, havuz/uyarı/servis listeleri, NAS özet paneli). En küçük boyut 1000x680; 1000x680'de görünüm birebir aynı.
 
 ---
 **Teknik Not:** Uygulama `net8.0-windows` üzerinde framework-bağımlı olarak derlenir (`installer/publish.ps1`) ve Velopack ile paketlenir. Loglar artık `%APPDATA%\KontroXXL\app.log` altında.
