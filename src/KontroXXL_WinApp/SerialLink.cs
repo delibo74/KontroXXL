@@ -1,9 +1,8 @@
-using System;
+﻿using System;
 using System.IO.Ports;
 using System.Linq;
 using System.Management;
 using System.Threading;
-using System.Threading.Tasks;
 using KontroXXL.Core.Logging;
 using KontroXXL.Core.Serial;
 
@@ -11,12 +10,32 @@ namespace KontroXXL_WinApp
 {
     /// <summary>
     /// Seri bağlantıyı kendi başına ayakta tutar. v2'de (A2) port bir kez açılıyordu;
-    /// Arduino çıkarılınca uygulama sessizce ölüyordu. Burada 2 saniyede bir yeniden dener.
+    /// Arduino çıkarılınca uygulama sessizce ölüyordu.
     /// </summary>
+    /// <remarks>
+    /// 2026-09-04 CANLI HATA — okuma NEDEN kendi thread'inde ve SENKRON:
+    /// Eskiden okuma <c>_port.BaseStream.ReadAsync(...)</c> ile bir ThreadPool
+    /// devamlilik zincirinde yapiliyordu. Windows'ta seri portun okumasi ORTAK
+    /// (overlapped) G/C'dir ve isletim sistemi bekleyen bir okumayi, onu BASLATAN
+    /// thread sonlandiginda iptal eder. ThreadPool thread'i geri donusturuldugu anda
+    /// okuma "The I/O operation has been aborted because of either a thread exit or an
+    /// application request." (ERROR_OPERATION_ABORTED) ile duserdi. Sonuc: port aciliyor,
+    /// AYNI SANIYE kopuyor, 2 saniye sonra tekrar — sonsuz acil-kop dongusu
+    /// (app.log'da 822 kayit) ve LCD hicbir zaman kararli veri gormuyordu.
+    /// OLCUM: ayni porttan SENKRON okuyan bagimsiz bir istemci 26 saniye kesintisiz
+    /// calisti; yani donanim/surucu saglamdi, hata bizim okuma modelimizdeydi.
+    /// Bu yuzden okuma artik OMRU BOYUNCA yasayan tek bir adanmis thread'de, senkron
+    /// yapiliyor: okumayi baslatan thread okuma bitene kadar yasiyor.
+    /// </remarks>
     public sealed class SerialLink : IDisposable
     {
-        const int ReconnectDelayMs = 2000;
+        const int ReconnectBaseDelayMs = 2000;
+        const int ReconnectMaxDelayMs = 30000;
         const int ReadBufferSize = 256;
+
+        // Senkron okumanin iptal bayragini ne siklikta gorecegi. Kisa tutulur ki
+        // Stop() beklemede takilmasin; timeout normal bir olaydir, hata degil.
+        const int ReadTimeoutMs = 500;
 
         readonly ILog _log;
         readonly Func<string> _preferredPort;   // config'ten anlık okunur
@@ -24,10 +43,13 @@ namespace KontroXXL_WinApp
         readonly Func<bool> _autoDetect;
         readonly SerialLineBuffer _lineBuffer = new();
         readonly object _writeGate = new();
+        readonly SerialReconnectPolicy _reconnect =
+            new SerialReconnectPolicy(ReconnectBaseDelayMs, ReconnectMaxDelayMs);
 
         CancellationTokenSource _cts;
         SerialPort _port;
-        Task _loop;
+        Thread _loop;
+        string _lastOpenError = "";
 
         public event Action<string> LineReceived;
         public event Action Connected;
@@ -47,19 +69,26 @@ namespace KontroXXL_WinApp
         {
             if (_loop != null) return;
             _cts = new CancellationTokenSource();
-            _loop = Task.Run(() => RunAsync(_cts.Token));
+
+            // ADANMIS thread — ThreadPool DEGIL. Bekleyen seri okuma onu baslatan
+            // thread'in omrune bagli (bkz. sinif aciklamasi).
+            _loop = new Thread(() => Run(_cts.Token))
+            {
+                IsBackground = true,
+                Name = "KontroXXL.SerialLink"
+            };
+            _loop.Start();
         }
 
         public void Stop()
         {
             try { _cts?.Cancel(); } catch { }
 
-            // Windows'ta SerialPort.BaseStream.ReadAsync iptali guvenilir sekilde
-            // onurlandirmiyor; takili okumayi gercekte cozen sey portun dispose
-            // edilmesidir. Beklemeden ONCE kapat, yoksa cikista UI 3 saniye donuyor.
+            // Takili bir okumayi gercekte cozen sey portun dispose edilmesidir.
+            // Beklemeden ONCE kapat, yoksa cikista UI ReadTimeout kadar donuyor.
             ClosePort();
 
-            try { _loop?.Wait(3000); } catch { }
+            try { _loop?.Join(3000); } catch { }
             _loop = null;
         }
 
@@ -74,7 +103,7 @@ namespace KontroXXL_WinApp
             }
         }
 
-        async Task RunAsync(CancellationToken ct)
+        void Run(CancellationToken ct)
         {
             var buffer = new byte[ReadBufferSize];
 
@@ -82,14 +111,22 @@ namespace KontroXXL_WinApp
             {
                 if (!IsConnected)
                 {
-                    if (!TryOpen()) { await Delay(ReconnectDelayMs, ct); continue; }
+                    if (!TryOpen())
+                    {
+                        Backoff("port acilamadi (" + _lastOpenError + ")", ct);
+                        continue;
+                    }
+                    _reconnect.OnConnected();
                     Connected?.Invoke();
                 }
 
                 try
                 {
-                    int n = await _port.BaseStream.ReadAsync(buffer, 0, buffer.Length, ct);
-                    if (n <= 0) { ClosePort(); continue; }
+                    // SENKRON okuma, bu adanmis thread'in uzerinde. ReadTimeout dolarsa
+                    // TimeoutException gelir — bu NORMALDIR, sadece iptal bayragini
+                    // kontrol edip devam ederiz; baglanti kopmus sayilmaz.
+                    int n = _port.Read(buffer, 0, buffer.Length);
+                    if (n <= 0) continue;
 
                     foreach (string line in _lineBuffer.Feed(buffer.AsSpan(0, n)))
                     {
@@ -97,36 +134,61 @@ namespace KontroXXL_WinApp
                         catch (Exception ex) { _log.Error("Seri satir isleme hatasi", ex); }
                     }
                 }
-                catch (OperationCanceledException) { break; }
+                catch (TimeoutException) { /* veri yok; kopma degil */ }
                 catch (Exception ex)
                 {
-                    _log.Info("Seri baglanti koptu: " + ex.Message);
+                    // Stop() portu dispose ettiginde de buraya duseriz; o bir hata degil.
+                    if (ct.IsCancellationRequested) break;
+
                     ClosePort();
-                    await Delay(ReconnectDelayMs, ct);
+                    Backoff(ex.Message, ct);
                 }
             }
 
             ClosePort();
         }
 
-        static async Task Delay(int ms, CancellationToken ct)
+        /// <summary>
+        /// Basarisiz denemeyi politikaya bildirir, kararina gore loglar ve bekler.
+        /// </summary>
+        /// <remarks>
+        /// Gecikme ve log kismasi kararlari <see cref="SerialReconnectPolicy"/> icinde,
+        /// birim testleriyle. Burasi yalnizca o karari uygular: ayni hata art arda
+        /// tekrarlarken loga tek satir yazilir, gecikme ustel olarak buyur.
+        /// </remarks>
+        void Backoff(string error, CancellationToken ct)
         {
-            try { await Task.Delay(ms, ct); } catch (OperationCanceledException) { }
+            var decision = _reconnect.OnFailure(error);
+            if (decision.ShouldLog) _log.Info(decision.Message);
+            else _log.Debug("Seri yeniden deneme #" + _reconnect.ConsecutiveFailures +
+                            " (" + decision.DelayMs + " ms): " + error);
+            Sleep(decision.DelayMs, ct);
+        }
+
+        static void Sleep(int ms, CancellationToken ct)
+        {
+            try { ct.WaitHandle.WaitOne(ms); } catch { }
         }
 
         bool TryOpen()
         {
             string target = ResolvePort();
-            if (string.IsNullOrEmpty(target)) return false;
+            if (string.IsNullOrEmpty(target)) { _lastOpenError = "uygun port bulunamadi"; return false; }
 
             SerialPort p = null;
             try
             {
-                p = new SerialPort(target, _baud()) { DtrEnable = true, RtsEnable = true };
+                p = new SerialPort(target, _baud())
+                {
+                    DtrEnable = true,
+                    RtsEnable = true,
+                    ReadTimeout = ReadTimeoutMs
+                };
                 p.Open();
                 _port = p;
                 CurrentPort = target;
                 _lineBuffer.Reset();
+                _lastOpenError = "";
                 _log.Info($"Seri port acildi: {target} @ {_baud()} baud");
                 return true;
             }
@@ -134,6 +196,7 @@ namespace KontroXXL_WinApp
             {
                 // Acilamayan port nesnesi sizmasin — bu yol 2 saniyede bir tekrarlaniyor.
                 try { p?.Dispose(); } catch { }
+                _lastOpenError = ex.Message;
                 _log.Debug($"Seri port acilamadi ({target}): {ex.Message}");
                 return false;
             }
