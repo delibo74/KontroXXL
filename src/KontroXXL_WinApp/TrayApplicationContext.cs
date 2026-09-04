@@ -313,11 +313,11 @@ namespace KontroXXL_WinApp
         // atom/JSON feed'i DEGIL: kendisi bundan api.github.com tabanini turetiyor.
         // ".../releases" ya da ".git" ekli bir deger verilirse API cagrisi 404 doner.
         // accessToken null geciliyor (asagida GithubSource'a), prerelease kapali.
-        // F4-3 OLCUMU (2026-09-04, `gh repo view`): depo su anda PRIVATE. Bu satirda
-        // eskiden "depo public" yaziyordu — DOGRU DEGILDI. Kimliksiz bir istemci
-        // private bir deponun release'lerini GOREMEZ: guncelleme denetimi depo public
-        // yapilana (ya da buraya gercek bir token verilene) kadar calismaz.
-        // Bos birakilirsa guncelleme menusu bunu ACIKCA soyler — sessizce gecmez.
+        // F4-3 OLCUMU: depo bir sure PRIVATE'ti ve o sirada kimliksiz istemci
+        // release'leri GOREMIYORDU. 2026-09-04 05:09'da `gh repo view` ile yeniden
+        // olculdu: visibility = PUBLIC, feed anonim okunabiliyor. Depo tekrar private
+        // yapilirsa guncelleme denetimi calismayi birakir (ya da buraya gercek bir
+        // token verilmesi gerekir); bos birakilirsa menu bunu ACIKCA soyler.
         private const string UpdateFeedUrl = "https://github.com/delibo74/KontroXXL";
 
         // Menu ogesi tekrar tekrar tiklanabilir; indirme suruyorken ikinci bir
