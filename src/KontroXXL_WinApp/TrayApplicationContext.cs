@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Windows.Forms;
 using System.Net.Http;
@@ -241,7 +241,11 @@ namespace KontroXXL_WinApp
         // Velopack GithubSource'un bekledigi sey DEPO adresidir, releases sayfasi ya da
         // atom/JSON feed'i DEGIL: kendisi bundan api.github.com tabanini turetiyor.
         // ".../releases" ya da ".git" ekli bir deger verilirse API cagrisi 404 doner.
-        // Depo public (Task 7); accessToken null geciliyor, prerelease kapali.
+        // accessToken null geciliyor (asagida GithubSource'a), prerelease kapali.
+        // F4-3 OLCUMU (2026-09-04, `gh repo view`): depo su anda PRIVATE. Bu satirda
+        // eskiden "depo public" yaziyordu — DOGRU DEGILDI. Kimliksiz bir istemci
+        // private bir deponun release'lerini GOREMEZ: guncelleme denetimi depo public
+        // yapilana (ya da buraya gercek bir token verilene) kadar calismaz.
         // Bos birakilirsa guncelleme menusu bunu ACIKCA soyler — sessizce gecmez.
         private const string UpdateFeedUrl = "https://github.com/delibo74/KontroXXL";
 
