@@ -1,4 +1,4 @@
-# KontroXXL kurulum paketi (Faz 2 / Task 5) — Velopack.
+﻿# KontroXXL kurulum paketi (Faz 2 / Task 5) — Velopack.
 #
 # Once publish.ps1 calisir (yayin + surum kapisi), sonra vpk o klasoru paketler.
 # Cikti: releases\KontroXXL-win-Setup.exe
@@ -42,6 +42,25 @@ $version = Get-BuildVersion -PropsPath $props
 
 if (-not (Test-Path $icon)) { throw "Ikon bulunamadi: $icon" }
 if (-not (Test-Path (Join-Path $publishOut "KontroXXL_WinApp.exe"))) { throw "Yayin ciktisi eksik: $publishOut" }
+
+# ON-TEMIZLIK — vpk pack IDEMPOTENT DEGIL: outputDir'de paketlenmekte olan surumun
+# nupkg'si zaten duruyorsa cikis kodu -1 ile duser ve SEBEBINI SOYLEMEZ ("vpk pack
+# basarisiz (cikis kodu -1)"). 2026-09-04'te 2.2.1'i yeniden paketlerken tam bu tuzaga
+# dusuldu. Bu yuzden YALNIZCA paketlenen surumun kendi ciktilarini siliyoruz.
+# ONCEKI surumlerin *-full.nupkg dosyalarina DOKUNULMAZ: delta uretimi (2.2.0 -> 2.2.1)
+# onlari okur, silinirlerse delta hic uretilmez ve guncelleme tam paket indirmeye duser.
+$stale = @(
+    (Join-Path $releases "KontroXXL-$version-full.nupkg"),
+    (Join-Path $releases "KontroXXL-$version-delta.nupkg"),
+    (Join-Path $releases "KontroXXL-win-Setup.exe"),
+    (Join-Path $releases "KontroXXL-win-Portable.zip")
+)
+foreach ($f in $stale) {
+    if (Test-Path $f) {
+        Write-Host "On-temizlik: $([System.IO.Path]::GetFileName($f)) siliniyor (ayni surum yeniden paketleniyor)."
+        Remove-Item $f -Force
+    }
+}
 
 # --framework: yayin framework-dependent, temiz bir makinede .NET 8 Desktop runtime
 # olmayabilir (spec 8.3). Bu bayrak olmadan kurulum sessizce acilmayan bir uygulama birakir;
