@@ -10,6 +10,7 @@ using Newtonsoft.Json.Linq;
 using Microsoft.Win32;
 using System.Runtime.InteropServices;
 using KontroXXL.Core.Diagnostics;
+using KontroXXL.Core.Layout;
 
 namespace KontroXXL_WinApp
 {
@@ -19,6 +20,19 @@ namespace KontroXXL_WinApp
         [DllImport("user32.dll")] public static extern int SendMessage(IntPtr hWnd, int Msg, int wParam, int lParam);
         [DllImport("user32.dll")] public static extern bool ReleaseCapture();
         [DllImport("gdi32.dll")] public static extern IntPtr CreateRoundRectRgn(int nLeftRect, int nTopRect, int nRightRect, int nBottomRect, int nWidthEllipse, int nHeightEllipse);
+
+        // F4-2: Region.FromHrgn HRGN'i KOPYALAR; orijinali biz silmezsek sizar.
+        // Tek seferlik cagride gorunmeyen bu sizinti her Resize'da gercek olur.
+        [DllImport("gdi32.dll")] public static extern bool DeleteObject(IntPtr hObject);
+
+        public const int WM_NCHITTEST      = 0x0084;
+        public const int WM_NCLBUTTONDOWN  = 0x00A1;
+        public const int HTCAPTION         = 0x2;
+
+        // WM_NCHITTEST donus kodlari; WindowEdge -> bu tablo.
+        public const int HTLEFT = 10, HTRIGHT = 11, HTTOP = 12, HTTOPLEFT = 13,
+                         HTTOPRIGHT = 14, HTBOTTOM = 15, HTBOTTOMLEFT = 16,
+                         HTBOTTOMRIGHT = 17;
     }
 
     /// <summary>
@@ -83,7 +97,13 @@ namespace KontroXXL_WinApp
         protected override void OnPaint(PaintEventArgs e)
         {
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            Rectangle rect = new Rectangle(20, 15, 100, 100);
+
+            // F4-2 Adim C: cap artik ClientSize'dan turetiliyor. Hesap Core'da
+            // (DonutGeometry) ve testli: varsayilan 140x170'te sonuc eski sabitlerle
+            // BIREBIR ayni (20, 15, 100, 100) — gorunum degismez, ama kontrol
+            // buyutuldugunde artik donut da buyur.
+            var (rx, ry, d) = DonutGeometry.Ring(Width, Height);
+            Rectangle rect = new Rectangle(rx, ry, d, d);
             float angle = Math.Max(0, Math.Min(360f, (Value / (MaxValue > 0 ? MaxValue : 100)) * 360f));
 
             using (Pen p = new Pen(Color.FromArgb(30, 30, 40), 10)) e.Graphics.DrawEllipse(p, rect);
@@ -105,10 +125,12 @@ namespace KontroXXL_WinApp
 
             string valStr = $"{Value:F0}{Unit}";
             SizeF szVal = e.Graphics.MeasureString(valStr, FontValue);
-            e.Graphics.DrawString(valStr, FontValue, Brushes.White, (Width - szVal.Width) / 2, (110 - szVal.Height) / 2 + 15);
+            e.Graphics.DrawString(valStr, FontValue, Brushes.White,
+                (Width - szVal.Width) / 2, DonutGeometry.ValueTextTop(ry, d, szVal.Height));
 
             SizeF szTitle = e.Graphics.MeasureString(Title.ToUpper(), FontTitle);
-            e.Graphics.DrawString(Title.ToUpper(), FontTitle, Brushes.LightGray, (Width - szTitle.Width) / 2, 130);
+            e.Graphics.DrawString(Title.ToUpper(), FontTitle, Brushes.LightGray,
+                (Width - szTitle.Width) / 2, DonutGeometry.TitleTextTop(ry, d));
         }
     }
 
@@ -214,6 +236,10 @@ namespace KontroXXL_WinApp
         private CheckBox chkAutoDetectPort;
         private CheckBox chkEnableNas, chkEnableArduino, chkEnableShortcuts, chkStartWithWindows;
         private CheckBox chkNotifyNasAlerts;
+
+        // F4-2: ReflowContent'in esnettigi bolumler. Hepsi zaten vardi, yalnizca
+        // artik alanla erisiliyor (once yerel degiskendiler).
+        private Panel pnlAlertHeader, pnlNasInfo, pnlPcNet;
         private ListBox lstShortcuts;
 
         private string lastPoolSig = "", lastAlertSig = "", lastSvcSig = "", lastAppSig = "";
@@ -261,14 +287,16 @@ namespace KontroXXL_WinApp
         }
 
         private void InitializeComponent() {
-            // Fixed window — no resize, always centered
+            // F4-2: pencere artik BUYUYEBILIR. MinimumSize eski sabit boyutta kaliyor —
+            // 50 mutlak konumlu kontrol bunun altinda ust uste biner; kucultme yerine
+            // sekmelerdeki AutoScroll devralsin. MaximumSize KALDIRILDI.
             this.ClientSize = new Size(1000, 680);
-            this.MinimumSize = this.MaximumSize = new Size(1000, 680);
+            this.MinimumSize = new Size(1000, 680);
             this.Text = "KONTROXXL";
             this.FormBorderStyle = FormBorderStyle.None;
             this.BackColor = BgDark;
             this.StartPosition = FormStartPosition.CenterScreen;
-            Region = System.Drawing.Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 12, 12));
+            ApplyRoundedRegion();
 
             string iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "icon.ico");
             if (File.Exists(iconPath)) this.Icon = new Icon(iconPath);
@@ -277,8 +305,13 @@ namespace KontroXXL_WinApp
             this.ForeColor = Color.White;
             this.Font = new Font("Segoe UI", 10);
 
-            // Thin border glow
-            this.Padding = new Padding(1);
+            // Thin border glow.
+            // F4-2: Padding 1 -> GripBorder. Kenarliksiz pencerede WM_NCHITTEST yalnizca
+            // FORMUN kendi acikta kalan alanina gelir; cocuk paneller (topBar/sideNav/
+            // contentContainer) kendi HWND'leriyle 1 pikselden buyuk her yeri kapatir.
+            // Bu birkac pikselik cerceve tutamagin oturdugu yer — icerik o kadar iceri
+            // kayar, font/renk/efekt hicbiri degismez.
+            this.Padding = new Padding(GripBorder);
             this.Paint += (s, e) => {
                 using (Pen p = new Pen(Color.FromArgb(0, 100, 180), 1))
                     e.Graphics.DrawRectangle(p, 0, 0, Width - 1, Height - 1);
@@ -302,6 +335,153 @@ namespace KontroXXL_WinApp
             SetupNasAppsTab();
             SetupShortcutsTab();
             SetupSettingsTab();
+
+            // F4-2: pencere boyu degistikce yuvarlak kose ve esneyen bolumler yenilenir.
+            this.Resize += (s, e) => { ApplyRoundedRegion(); ReflowContent(); };
+            ReflowContent();
+        }
+
+        // ================= F4-2: yeniden boyutlandirma =================
+
+        /// <summary>Kenar tutamaginin kalinligi; ayni deger Form.Padding'i de belirler.</summary>
+        private const int GripBorder = WindowResizeGeometry.DefaultBorder;
+
+        /// <summary>Buyutulmeden onceki konum/boyut; "Geri Al" buna doner.</summary>
+        private Rectangle _restoreBounds = Rectangle.Empty;
+
+        private Button btnMax;
+
+        private bool FillsWorkArea() {
+            var wa = Screen.FromControl(this).WorkingArea;
+            return Bounds.Width >= wa.Width && Bounds.Height >= wa.Height;
+        }
+
+        /// <summary>
+        /// Yuvarlak kose bolgesini YENIDEN uretir. Eski hali bir kez, InitializeComponent
+        /// icinde hesaplaniyordu; esneyen pencerede icerik kirpilirdi.
+        /// HRGN elle siliniyor (Region.FromHrgn kopyalar), eski Region da birakiliyor —
+        /// aksi halde her Resize bir GDI nesnesi sizdirirdi.
+        /// </summary>
+        private void ApplyRoundedRegion() {
+            if (IsDisposed || Width <= 0 || Height <= 0) return;
+
+            int radius = WindowResizeGeometry.CornerRadius(FillsWorkArea());
+
+            if (radius <= 0) {
+                Region = null;                            // buyutulmus pencerede kose kare
+            } else {
+                IntPtr hrgn = NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, radius, radius);
+                if (hrgn == IntPtr.Zero) return;          // uretilemediyse eskisini bozma
+                Region = System.Drawing.Region.FromHrgn(hrgn);
+                // Region.FromHrgn HRGN'i KOPYALAR; kaynagi biz silmezsek her Resize bir
+                // GDI nesnesi sizdirir. Onceki Region nesnesini Control.Region setter'i
+                // zaten birakiyor, onu elle Dispose etmek cifte birakma olurdu.
+                NativeMethods.DeleteObject(hrgn);
+            }
+
+            Invalidate();
+        }
+
+        /// <summary>
+        /// WM_NCHITTEST: kenarliksiz pencerenin tutamaklari. Karar
+        /// <see cref="WindowResizeGeometry"/> icinde (test edilebilir), burada yalnizca
+        /// Win32 kodlarina cevrilir. Baslik cubugundaki surukleme (topBar.MouseDown ->
+        /// HTCAPTION) etkilenmez: o bir COCUK kontrolun mesaji, buraya hic ulasmaz.
+        /// </summary>
+        protected override void WndProc(ref Message m) {
+            if (m.Msg == NativeMethods.WM_NCHITTEST) {
+                base.WndProc(ref m);
+
+                // Koordinatlar ISARETLI 16 bit: birincil ekranin soluna/ustune konmus
+                // ikinci monitorde negatif gelirler, maskeleme onlari 65000'e cevirirdi.
+                long lp = m.LParam.ToInt64();
+                var screen = new Point(
+                    unchecked((short)(lp & 0xFFFF)),
+                    unchecked((short)((lp >> 16) & 0xFFFF)));
+                var client = PointToClient(screen);
+
+                var edge = WindowResizeGeometry.HitTest(Width, Height, client.X, client.Y, GripBorder);
+                int code = edge switch {
+                    WindowEdge.Left        => NativeMethods.HTLEFT,
+                    WindowEdge.Right       => NativeMethods.HTRIGHT,
+                    WindowEdge.Top         => NativeMethods.HTTOP,
+                    WindowEdge.Bottom      => NativeMethods.HTBOTTOM,
+                    WindowEdge.TopLeft     => NativeMethods.HTTOPLEFT,
+                    WindowEdge.TopRight    => NativeMethods.HTTOPRIGHT,
+                    WindowEdge.BottomLeft  => NativeMethods.HTBOTTOMLEFT,
+                    WindowEdge.BottomRight => NativeMethods.HTBOTTOMRIGHT,
+                    _ => 0,
+                };
+                if (code != 0) m.Result = (IntPtr)code;
+                return;
+            }
+            base.WndProc(ref m);
+        }
+
+        /// <summary>
+        /// Buyut / Geri Al. WindowState.Maximized KULLANILMIYOR: kenarliksiz bir pencere
+        /// oyle buyutulunce gorev cubugunu de orter. Bunun yerine calisma alanina
+        /// oturtuluyor — hem gorev cubugu gorunur kalir hem Region hesabi dogru calisir.
+        /// </summary>
+        private void ToggleMaximize() {
+            var wa = Screen.FromControl(this).WorkingArea;
+
+            if (FillsWorkArea() && _restoreBounds != Rectangle.Empty) {
+                Bounds = _restoreBounds;
+            } else {
+                _restoreBounds = Bounds;
+                Bounds = wa;
+            }
+            if (btnMax != null) btnMax.Text = FillsWorkArea() ? "❐" : "□";
+        }
+
+        // Tasarim boyutlari: bu bolumlerin pencere ILK boyutundayken sahip oldugu olculer.
+        private const int NaturalListWidth   = 740;   // flowNasPools/Alerts/Services/Apps
+        private const int NaturalHeaderWidth = 720;   // alertHeader
+        private const int NaturalInfoWidth   = 400;   // pInfo (NAS ozet + chartNasNet)
+        private const int NaturalNetHeight   = 240;   // pNet (PC ag grafigi)
+
+        // Taban olcu: ilk ReflowContent'te (varsayilan 1000x680) yakalanir.
+        private int _baseInnerW, _baseInnerH;
+
+        /// <summary>
+        /// Adim B: pencere genisledikce icerigin de genislemesi.
+        /// </summary>
+        /// <remarks>
+        /// Mutlak konumlu 50 kontrolun tumu Anchor'lanmiyor (planda gerekcesi var:
+        /// faydasi dusuk, regresyon riski yuksek); yalnizca gozle gorulur bosluk birakan
+        /// bolumler esnetiliyor.
+        ///
+        /// KRITIK: olculer kapsayicidan yeniden HESAPLANMIYOR, tabana gore FAZLALIK
+        /// dagitiliyor. Aksi halde pencere varsayilan 1000x680'deyken bile duzen kayardi
+        /// ve D1'in (ii) secilme sebebi — gorsel kimligin degismemesi — ihlal olurdu.
+        /// </remarks>
+        private void ReflowContent() {
+            if (IsDisposed || contentContainer == null) return;
+
+            int innerW = contentContainer.ClientSize.Width  - contentContainer.Padding.Horizontal;
+            int innerH = contentContainer.ClientSize.Height - contentContainer.Padding.Vertical;
+            if (innerW <= 0 || innerH <= 0) return;
+
+            if (_baseInnerW == 0) { _baseInnerW = innerW; _baseInnerH = innerH; }
+
+            int listWidth = WindowResizeGeometry.Stretch(
+                innerW, _baseInnerW - NaturalListWidth, NaturalListWidth);
+
+            foreach (var flow in new[] { flowNasPools, flowNasAlerts, flowNasServices, flowRealApps })
+                if (flow != null) flow.MaximumSize = new Size(listWidth, 0);
+
+            if (pnlAlertHeader != null)
+                pnlAlertHeader.Width = WindowResizeGeometry.Stretch(
+                    innerW, _baseInnerW - NaturalHeaderWidth, NaturalHeaderWidth);
+
+            if (pnlNasInfo != null)
+                pnlNasInfo.Width = WindowResizeGeometry.Stretch(
+                    innerW, _baseInnerW - NaturalInfoWidth, NaturalInfoWidth);
+
+            if (pnlPcNet != null)
+                pnlPcNet.Height = WindowResizeGeometry.Stretch(
+                    innerH, _baseInnerH - NaturalNetHeight, NaturalNetHeight);
         }
 
         private void BuildTopBar() {
@@ -309,9 +489,10 @@ namespace KontroXXL_WinApp
             topBar.MouseDown += (s, e) => {
                 if (e.Button == MouseButtons.Left) {
                     NativeMethods.ReleaseCapture();
-                    NativeMethods.SendMessage(Handle, 0xA1, 0x2, 0);
+                    NativeMethods.SendMessage(Handle, NativeMethods.WM_NCLBUTTONDOWN, NativeMethods.HTCAPTION, 0);
                 }
             };
+            topBar.DoubleClick += (s, e) => ToggleMaximize();
 
             // App title
             Label title = new Label() {
@@ -358,6 +539,22 @@ namespace KontroXXL_WinApp
             btnClose.FlatAppearance.MouseOverBackColor = Color.FromArgb(180, 30, 30);
             btnClose.Click += (s, e) => this.Hide();
             topBar.Controls.Add(btnClose);
+
+            // F4-2: Buyut / Geri Al. Dock.Right sirasi: Kapat en sagda kalsin diye
+            // bu dugme Kapat'tan SONRA ekleniyor (Dock.Right ters sirada yerlesir).
+            btnMax = new Button() {
+                Text = "□",
+                Dock = DockStyle.Right,
+                Width = 48,
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.FromArgb(180, 180, 180),
+                Cursor = Cursors.Hand,
+                Font = new Font("Segoe UI", 10)
+            };
+            btnMax.FlatAppearance.BorderSize = 0;
+            btnMax.FlatAppearance.MouseOverBackColor = Color.FromArgb(50, 50, 65);
+            btnMax.Click += (s, e) => ToggleMaximize();
+            topBar.Controls.Add(btnMax);
 
             // Minimize button
             Button btnMin = new Button() {
@@ -549,6 +746,7 @@ namespace KontroXXL_WinApp
 
             // Network section — Dock.Top (not Fill) so AutoScroll works correctly
             Panel pNet = new Panel() { Dock = DockStyle.Top, Height = 240, Padding = new Padding(0, 12, 0, 0) };
+            pnlPcNet = pNet;
             lblPcNet = new Label() {
                 Text = "PC AĞ HIZI",
                 Font = new Font("Impact", 12),
@@ -556,7 +754,12 @@ namespace KontroXXL_WinApp
                 AutoSize = true,
                 ForeColor = Color.Cyan
             };
-            chartPcNet = new LineChart() { Location = new Point(0, 32), Size = new Size(720, 180), ChartColor = Color.Cyan };
+            // F4-2 Adim B: LineChart zaten kendi Width/Height'ina gore olcekleniyor
+            // (OnPaint'te stX = Width / (maxPts-1)), Anchor bedava kazanc.
+            chartPcNet = new LineChart() {
+                Location = new Point(0, 32), Size = new Size(720, 180), ChartColor = Color.Cyan,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
+            };
             pNet.Controls.Add(lblPcNet);
             pNet.Controls.Add(chartPcNet);
 
@@ -585,13 +788,18 @@ namespace KontroXXL_WinApp
             dntNasTemp = new DonutProgress() { Title = "NAS TEMP", Unit = "°C", ProgressColor = Color.OrangeRed };
 
             Panel pInfo = new Panel() { Size = new Size(400, 185), Margin = new Padding(20, 0, 0, 0) };
+            pnlNasInfo = pInfo;
             lblNasLoad = new Label() { Text = "Load Avg: --",    Font = new Font("Segoe UI Semibold", 10), Location = new Point(0, 5),  AutoSize = true };
             lblNasNet  = new Label() { Text = "Net Activity: --", Font = new Font("Impact", 12),           Location = new Point(0, 30), AutoSize = true, ForeColor = Color.LightSkyBlue };
             lblNasMem  = new Label() { Text = "Memory: --",      Font = new Font("Segoe UI", 9),           Location = new Point(0, 58), AutoSize = true, ForeColor = Color.Gainsboro };
-            chartNasNet = new LineChart() { Location = new Point(0, 80), Size = new Size(380, 70) };
+            chartNasNet = new LineChart() {
+                Location = new Point(0, 80), Size = new Size(380, 70),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+            };
 
             Button btnNasReboot = new Button() {
                 Text = "↻  REBOOT NAS", Location = new Point(230, 0), Width = 155, Height = 30,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
                 BackColor = Color.FromArgb(40, 40, 50), ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI Bold", 8), Cursor = Cursors.Hand
             };
@@ -652,9 +860,11 @@ namespace KontroXXL_WinApp
 
             // Alerts header row
             Panel alertHeader = new Panel() { Size = new Size(720, 32), Margin = new Padding(0) };
+            pnlAlertHeader = alertHeader;
             alertHeader.Controls.Add(MakeSectionHeader("SYSTEM ALERTS", Color.Salmon));
             Button btnDismissAlerts = new Button() {
                 Text = "🔔 DISMISS ALL", Location = new Point(580, 2), Width = 140, Height = 26,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
                 BackColor = Color.FromArgb(40, 40, 50), ForeColor = Color.Salmon,
                 FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI Bold", 8), Cursor = Cursors.Hand
             };
